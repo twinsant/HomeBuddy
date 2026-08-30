@@ -4,8 +4,10 @@
 //
 
 import AppKit
+import ImageIO
 import Photos
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PhotoLibraryView: View {
     let album: PhotoAlbum
@@ -102,6 +104,8 @@ private struct PhotoViewerView: View {
 
     @State private var currentIndex: Int
     @State private var image: NSImage?
+    @State private var metadata: PhotoMetadata?
+    @State private var isShowingInfo = false
 
     init(assets: [PHAsset], initialIndex: Int, onBack: @escaping () -> Void) {
         self.assets = assets
@@ -127,23 +131,37 @@ private struct PhotoViewerView: View {
                 Text("照片 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)
                 Spacer()
+
+                Button {
+                    isShowingInfo.toggle()
+                } label: {
+                    Label("照片信息", systemImage: "info.circle")
+                }
+                .help("显示或隐藏照片信息")
             }
             .padding()
 
-            ZStack {
-                Color.black
+            HStack(spacing: 0) {
+                ZStack {
+                    Color.black
 
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(24)
-                } else {
-                    ProgressView()
-                        .tint(.white)
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(24)
+                    } else {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if isShowingInfo {
+                    PhotoInfoSidebar(asset: currentAsset, metadata: metadata)
+                        .frame(width: 300)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 20) {
                 Button {
@@ -167,6 +185,7 @@ private struct PhotoViewerView: View {
         .frame(minWidth: 700, minHeight: 500)
         .task(id: currentAsset.localIdentifier) {
             loadCurrentImage()
+            loadMetadata()
         }
         .onMoveCommand { direction in
             switch direction {
@@ -208,4 +227,156 @@ private struct PhotoViewerView: View {
             }
         }
     }
+
+    private func loadMetadata() {
+        metadata = nil
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestImageDataAndOrientation(
+            for: currentAsset,
+            options: options
+        ) { data, uti, _, _ in
+            guard let data else { return }
+            let parsedMetadata = PhotoMetadata(asset: currentAsset, data: data, uti: uti)
+            Task { @MainActor in
+                metadata = parsedMetadata
+            }
+        }
+    }
+}
+
+private struct PhotoMetadata {
+    let fileType: String?
+    let fileSize: String
+    let pixelSize: String
+    let creationDate: String
+    let camera: String?
+    let lens: String?
+    let exposure: String?
+    let iso: String?
+    let focalLength: String?
+    let location: String?
+
+    init(asset: PHAsset, data: Data, uti: String?) {
+        fileType = uti.flatMap { UTType($0)?.localizedDescription } ?? uti
+        fileSize = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
+        pixelSize = "\(asset.pixelWidth) × \(asset.pixelHeight)"
+        creationDate = asset.creationDate.map {
+            $0.formatted(date: .abbreviated, time: .shortened)
+        } ?? "未知"
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+        else {
+            camera = nil
+            lens = nil
+            exposure = nil
+            iso = nil
+            focalLength = nil
+            location = nil
+            return
+        }
+
+        let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any]
+        let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
+        let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any]
+
+        let make = tiff?[kCGImagePropertyTIFFMake as String] as? String
+        let model = tiff?[kCGImagePropertyTIFFModel as String] as? String
+        camera = [make, model].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+        lens = exif?[kCGImagePropertyExifLensModel as String] as? String
+        exposure = Self.exposureValue(exif?[kCGImagePropertyExifExposureTime as String])
+        iso = Self.isoValue(exif?[kCGImagePropertyExifISOSpeedRatings as String])
+        focalLength = Self.focalLengthValue(exif?[kCGImagePropertyExifFocalLength as String])
+        location = gps == nil ? nil : "包含 GPS 信息"
+    }
+
+    private static func exposureValue(_ value: Any?) -> String? {
+        guard let value = value as? Double else { return nil }
+        return value >= 1 ? String(format: "%.2f 秒", value) : String(format: "1/%.0f 秒", 1 / value)
+    }
+
+    private static func isoValue(_ value: Any?) -> String? {
+        if let values = value as? [NSNumber], let first = values.first {
+            return "ISO \(first.intValue)"
+        }
+        if let value = value as? NSNumber {
+            return "ISO \(value.intValue)"
+        }
+        return nil
+    }
+
+    private static func focalLengthValue(_ value: Any?) -> String? {
+        guard let value = value as? Double else { return nil }
+        return String(format: "%.0f mm", value)
+    }
+}
+
+private struct PhotoInfoSidebar: View {
+    let asset: PHAsset
+    let metadata: PhotoMetadata?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("照片信息")
+                    .font(.title3.weight(.semibold))
+
+                if let metadata {
+                    infoSection("基本信息", rows: [
+                        ("分辨率", metadata.pixelSize),
+                        ("文件类型", metadata.fileType ?? "未知"),
+                        ("文件大小", metadata.fileSize),
+                        ("拍摄时间", metadata.creationDate),
+                        ("状态", asset.isFavorite ? "已收藏" : "未收藏")
+                    ])
+
+                    let shootingRows = [
+                        ("相机", metadata.camera),
+                        ("镜头", metadata.lens),
+                        ("曝光时间", metadata.exposure),
+                        ("感光度", metadata.iso),
+                        ("焦距", metadata.focalLength),
+                        ("位置", metadata.location)
+                    ].compactMap { row -> (String, String)? in
+                        guard let value = row.1 else { return nil }
+                        return (row.0, value)
+                    }
+                    if !shootingRows.isEmpty {
+                        infoSection("拍摄信息", rows: shootingRows)
+                    }
+                } else {
+                    ProgressView("正在读取照片信息…")
+                }
+            }
+            .padding(20)
+        }
+        .background(.regularMaterial)
+    }
+
+    @ViewBuilder
+    private func infoSection(_ title: String, rows: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(row.0)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Text(row.1)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
+                Divider()
+            }
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
