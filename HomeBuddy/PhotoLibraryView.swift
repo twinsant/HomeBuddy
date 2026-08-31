@@ -229,26 +229,42 @@ private struct PhotoViewerView: View {
     }
 
     private func loadMetadata() {
+        let asset = currentAsset
+        let assetID = asset.localIdentifier
         metadata = nil
+
+        PhotoMetadataCache.shared.metadata(for: asset) { cachedMetadata in
+            guard currentAsset.localIdentifier == assetID else { return }
+            if let cachedMetadata {
+                metadata = cachedMetadata
+            } else {
+                loadMetadataFromPhotos(asset: asset, assetID: assetID)
+            }
+        }
+    }
+
+    private func loadMetadataFromPhotos(asset: PHAsset, assetID: String) {
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
 
         PHImageManager.default().requestImageDataAndOrientation(
-            for: currentAsset,
+            for: asset,
             options: options
         ) { data, uti, _, _ in
             guard let data else { return }
-            let parsedMetadata = PhotoMetadata(asset: currentAsset, data: data, uti: uti)
+            let parsedMetadata = PhotoMetadata(asset: asset, data: data, uti: uti)
+            PhotoMetadataCache.shared.save(parsedMetadata, for: asset)
             Task { @MainActor in
+                guard currentAsset.localIdentifier == assetID else { return }
                 metadata = parsedMetadata
             }
         }
     }
 }
 
-private struct PhotoMetadata {
+struct PhotoMetadata {
     let fileType: String?
     let fileSize: String
     let pixelSize: String
@@ -259,6 +275,23 @@ private struct PhotoMetadata {
     let iso: String?
     let focalLength: String?
     let location: String?
+
+    init(
+        fileType: String?, fileSize: String, pixelSize: String, creationDate: String,
+        camera: String?, lens: String?, exposure: String?, iso: String?,
+        focalLength: String?, location: String?
+    ) {
+        self.fileType = fileType
+        self.fileSize = fileSize
+        self.pixelSize = pixelSize
+        self.creationDate = creationDate
+        self.camera = camera
+        self.lens = lens
+        self.exposure = exposure
+        self.iso = iso
+        self.focalLength = focalLength
+        self.location = location
+    }
 
     init(asset: PHAsset, data: Data, uti: String?) {
         fileType = uti.flatMap { UTType($0)?.localizedDescription } ?? uti
@@ -324,6 +357,17 @@ private struct PhotoInfoSidebar: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("照片信息")
                     .font(.title3.weight(.semibold))
+
+                if let databaseURL = PhotoMetadataCache.shared.databaseURL {
+                    Text("SQLite 缓存")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(databaseURL.path)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                }
 
                 if let metadata {
                     infoSection("基本信息", rows: [

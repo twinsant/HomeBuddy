@@ -10,6 +10,11 @@ import SwiftData
 
 @main
 struct HomeBuddyApp: App {
+    init() {
+        // Create the metadata cache before the first photo is opened.
+        _ = PhotoMetadataCache.shared
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
