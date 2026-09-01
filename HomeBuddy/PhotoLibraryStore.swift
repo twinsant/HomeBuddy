@@ -105,8 +105,11 @@ final class PhotoLibraryStore: ObservableObject {
 final class PhotoMetadataCache {
     static let shared = PhotoMetadataCache()
 
+    private static let directoryBookmarkKey = "photoMetadataStorageDirectoryBookmark"
+    private static let directoryPathKey = "photoMetadataStorageDirectoryPath"
     private let queue = DispatchQueue(label: "com.twinsant.HomeBuddy.photo-metadata-cache")
     private var database: OpaquePointer?
+    private var securityScopedDirectoryURL: URL?
 
     private init() {
         queue.sync {
@@ -115,13 +118,74 @@ final class PhotoMetadataCache {
     }
 
     deinit {
-        if let database {
-            sqlite3_close(database)
-        }
+        queue.sync { closeDatabase() }
     }
 
     var databaseURL: URL? {
         queue.sync { databaseURLValue }
+    }
+
+    var storageDirectoryURL: URL? {
+        queue.sync { databaseURLValue?.deletingLastPathComponent() }
+    }
+
+    @discardableResult
+    func setStorageDirectory(_ directory: URL) -> URL? {
+        queue.sync {
+            let directory = directory.standardizedFileURL
+            guard directory.hasDirectoryPath else { return databaseURLValue }
+
+            if let bookmark = try? directory.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) {
+                UserDefaults.standard.set(bookmark, forKey: Self.directoryBookmarkKey)
+            }
+            UserDefaults.standard.set(directory.path, forKey: Self.directoryPathKey)
+
+            closeDatabase()
+            if directory.startAccessingSecurityScopedResource() {
+                securityScopedDirectoryURL = directory
+            }
+            guard openDatabase(in: directory) else {
+                openDefaultDatabase()
+                return databaseURLValue
+            }
+            return databaseURLValue
+        }
+    }
+
+    /// Copies the current cache database to a directory before switching to it.
+    func copyDatabase(to directory: URL, overwriting: Bool) -> Bool {
+        queue.sync {
+            guard let sourceURL = databaseURLValue else { return false }
+            let destinationDirectory = directory.standardizedFileURL
+            let destinationURL = destinationDirectory.appendingPathComponent("photo-metadata.sqlite")
+            let fileManager = FileManager.default
+            let startedAccess = destinationDirectory.startAccessingSecurityScopedResource()
+            defer {
+                if startedAccess {
+                    destinationDirectory.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            do {
+                try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+                guard sourceURL.standardizedFileURL != destinationURL.standardizedFileURL else { return true }
+                guard !fileManager.fileExists(atPath: destinationURL.path) || overwriting else { return false }
+
+                // Flush a possible WAL before copying the database file.
+                sqlite3_exec(database, "PRAGMA wal_checkpoint(FULL);", nil, nil, nil)
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                return true
+            } catch {
+                return false
+            }
+        }
     }
 
     func metadata(
@@ -166,30 +230,72 @@ final class PhotoMetadataCache {
     private var databaseURLValue: URL?
 
     private func openDatabase() {
+        if let path = UserDefaults.standard.string(forKey: Self.directoryPathKey) {
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            if directory.startAccessingSecurityScopedResource() {
+                securityScopedDirectoryURL = directory
+            }
+            if openDatabase(in: directory) {
+                return
+            }
+            directory.stopAccessingSecurityScopedResource()
+            securityScopedDirectoryURL = nil
+        }
+
+        if let bookmark = UserDefaults.standard.data(forKey: Self.directoryBookmarkKey) {
+            var isStale = false
+            if let directory = try? URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope, .withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ), directory.startAccessingSecurityScopedResource() {
+                securityScopedDirectoryURL = directory
+                if !isStale, openDatabase(in: directory) {
+                    return
+                }
+                directory.stopAccessingSecurityScopedResource()
+                securityScopedDirectoryURL = nil
+            }
+        }
+        openDefaultDatabase()
+    }
+
+    private func openDefaultDatabase() {
         let fileManager = FileManager.default
         let homeDirectoryURL = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".homebuddy", isDirectory: true)
         let fallbackURL = (fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? homeDirectoryURL)
             .appendingPathComponent("HomeBuddy", isDirectory: true)
 
-        let candidates = [homeDirectoryURL, fallbackURL]
-        for directory in candidates {
-            do {
-                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-                let url = directory.appendingPathComponent("photo-metadata.sqlite")
-                guard sqlite3_open(url.path, &database) == SQLITE_OK else {
-                    if let database {
-                        sqlite3_close(database)
-                        self.database = nil
-                    }
-                    continue
-                }
-                databaseURLValue = url
-                createTable()
-                return
-            } catch {
-                continue
+        _ = openDatabase(in: homeDirectoryURL) || openDatabase(in: fallbackURL)
+    }
+
+    private func openDatabase(in directory: URL) -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("photo-metadata.sqlite")
+            guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+                closeDatabase()
+                return false
             }
+            databaseURLValue = url
+            createTable()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func closeDatabase() {
+        if let database {
+            sqlite3_close(database)
+            self.database = nil
+        }
+        databaseURLValue = nil
+        if let securityScopedDirectoryURL {
+            securityScopedDirectoryURL.stopAccessingSecurityScopedResource()
+            self.securityScopedDirectoryURL = nil
         }
     }
 
@@ -209,15 +315,35 @@ final class PhotoMetadataCache {
             exposure TEXT,
             iso TEXT,
             focal_length TEXT,
-            location TEXT
+            location TEXT,
+            metadata_updated_at REAL
         );
         """
         sqlite3_exec(database, sql, nil, nil, nil)
+        // 仅为在该字段加入前创建的缓存数据库执行迁移。
+        if !columnExists("metadata_updated_at", in: "photo_metadata") {
+            sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN metadata_updated_at REAL;", nil, nil, nil)
+        }
+    }
+
+    private func columnExists(_ column: String, in table: String) -> Bool {
+        guard let database else { return false }
+        let sql = "PRAGMA table_info(\(table));"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if text(from: statement, at: 1) == column {
+                return true
+            }
+        }
+        return false
     }
 
     private func read(identifier: String, modificationTime: Double, width: Int, height: Int) -> PhotoMetadata? {
         guard let database else { return nil }
-        let sql = "SELECT file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location FROM photo_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? LIMIT 1;"
+        let sql = "SELECT file_type, file_size, pixel_size, creation_date, metadata_updated_at, camera, lens, exposure, iso, focal_length, location FROM photo_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? LIMIT 1;"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(statement) }
@@ -233,18 +359,19 @@ final class PhotoMetadataCache {
             fileSize: text(from: statement, at: 1) ?? "未知",
             pixelSize: text(from: statement, at: 2) ?? "未知",
             creationDate: text(from: statement, at: 3) ?? "未知",
-            camera: text(from: statement, at: 4),
-            lens: text(from: statement, at: 5),
-            exposure: text(from: statement, at: 6),
-            iso: text(from: statement, at: 7),
-            focalLength: text(from: statement, at: 8),
-            location: text(from: statement, at: 9)
+            metadataUpdatedAt: sqlite3_column_type(statement, 4) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
+            camera: text(from: statement, at: 5),
+            lens: text(from: statement, at: 6),
+            exposure: text(from: statement, at: 7),
+            iso: text(from: statement, at: 8),
+            focalLength: text(from: statement, at: 9),
+            location: text(from: statement, at: 10)
         )
     }
 
     private func write(_ metadata: PhotoMetadata, identifier: String, modificationTime: Double, width: Int, height: Int) {
         guard let database else { return }
-        let sql = "INSERT OR REPLACE INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+        let sql = "INSERT OR REPLACE INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }
@@ -260,6 +387,11 @@ final class PhotoMetadataCache {
             } else {
                 sqlite3_bind_null(statement, Int32(offset + 5))
             }
+        }
+        if let updatedAt = metadata.metadataUpdatedAt {
+            sqlite3_bind_double(statement, 15, updatedAt.timeIntervalSince1970)
+        } else {
+            sqlite3_bind_null(statement, 15)
         }
         sqlite3_step(statement)
     }

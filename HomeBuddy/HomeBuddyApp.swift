@@ -33,5 +33,9 @@ struct HomeBuddyApp: App {
             ContentView()
         }
         .modelContainer(sharedModelContainer)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

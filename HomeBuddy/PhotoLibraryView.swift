@@ -105,7 +105,7 @@ private struct PhotoViewerView: View {
     @State private var currentIndex: Int
     @State private var image: NSImage?
     @State private var metadata: PhotoMetadata?
-    @State private var isShowingInfo = false
+    @State private var isShowingInfo = true
 
     init(assets: [PHAsset], initialIndex: Int, onBack: @escaping () -> Void) {
         self.assets = assets
@@ -235,7 +235,7 @@ private struct PhotoViewerView: View {
 
         PhotoMetadataCache.shared.metadata(for: asset) { cachedMetadata in
             guard currentAsset.localIdentifier == assetID else { return }
-            if let cachedMetadata {
+            if let cachedMetadata, cachedMetadata.metadataUpdatedAt != nil {
                 metadata = cachedMetadata
             } else {
                 loadMetadataFromPhotos(asset: asset, assetID: assetID)
@@ -269,6 +269,7 @@ struct PhotoMetadata {
     let fileSize: String
     let pixelSize: String
     let creationDate: String
+    let metadataUpdatedAt: Date?
     let camera: String?
     let lens: String?
     let exposure: String?
@@ -278,6 +279,7 @@ struct PhotoMetadata {
 
     init(
         fileType: String?, fileSize: String, pixelSize: String, creationDate: String,
+        metadataUpdatedAt: Date?,
         camera: String?, lens: String?, exposure: String?, iso: String?,
         focalLength: String?, location: String?
     ) {
@@ -285,6 +287,7 @@ struct PhotoMetadata {
         self.fileSize = fileSize
         self.pixelSize = pixelSize
         self.creationDate = creationDate
+        self.metadataUpdatedAt = metadataUpdatedAt
         self.camera = camera
         self.lens = lens
         self.exposure = exposure
@@ -297,6 +300,7 @@ struct PhotoMetadata {
         fileType = uti.flatMap { UTType($0)?.localizedDescription } ?? uti
         fileSize = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
         pixelSize = "\(asset.pixelWidth) × \(asset.pixelHeight)"
+        metadataUpdatedAt = Date()
         creationDate = asset.creationDate.map {
             $0.formatted(date: .abbreviated, time: .shortened)
         } ?? "未知"
@@ -375,6 +379,9 @@ private struct PhotoInfoSidebar: View {
                         ("文件类型", metadata.fileType ?? "未知"),
                         ("文件大小", metadata.fileSize),
                         ("拍摄时间", metadata.creationDate),
+                        ("元数据更新时间", metadata.metadataUpdatedAt.map {
+                            $0.formatted(date: .abbreviated, time: .shortened)
+                        } ?? "未知"),
                         ("状态", asset.isFavorite ? "已收藏" : "未收藏")
                     ])
 
