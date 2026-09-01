@@ -13,6 +13,10 @@ struct SettingsView: View {
     @State private var isShowingError = false
     @State private var errorMessage = ""
     @State private var statusMessage = ""
+    @State private var ollamaBaseURL = OllamaConfiguration.defaultBaseURL
+    @State private var ollamaModel = OllamaConfiguration.defaultModel
+    @State private var ollamaModels: [String] = []
+    @State private var isLoadingOllamaModels = false
 
     var body: some View {
         Form {
@@ -46,12 +50,58 @@ struct SettingsView: View {
                         .foregroundStyle(.green)
                 }
             }
+
+            Section("Ollama 图片识别") {
+                TextField("服务地址", text: $ollamaBaseURL)
+                TextField("模型名称", text: $ollamaModel)
+
+                HStack {
+                    if isLoadingOllamaModels {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("正在读取已安装模型…")
+                    } else if ollamaModels.isEmpty {
+                        Text("未读取到模型，请确认 Ollama 已启动。")
+                    } else {
+                        Text("已找到 \(ollamaModels.count) 个模型。请选择支持图片输入的模型。")
+                    }
+                    Spacer()
+                    Button {
+                        refreshOllamaModels()
+                    } label: {
+                        Label("刷新模型", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isLoadingOllamaModels)
+                    Button("保存") {
+                        OllamaConfiguration(baseURL: ollamaBaseURL, model: ollamaModel).save()
+                        statusMessage = "Ollama 配置已保存。"
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if !ollamaModels.isEmpty {
+                    Picker("已安装模型", selection: $ollamaModel) {
+                        ForEach(ollamaModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                }
+
+                Text("默认使用本机 Ollama 服务。模型名称也可以手动输入。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 560, height: 190)
+        .frame(width: 560, height: 330)
         .onAppear {
             storageDirectory = PhotoMetadataCache.shared.storageDirectoryURL
+            let configuration = OllamaConfiguration.current
+            ollamaBaseURL = configuration.baseURL
+            ollamaModel = configuration.model
+            refreshOllamaModels()
         }
         .alert("目标目录已有数据库", isPresented: $isConfirmingOverwrite) {
             Button("取消", role: .cancel) {
@@ -86,6 +136,24 @@ struct SettingsView: View {
 
         guard panel.runModal() == .OK, let directory = panel.url else { return }
         prepareToChangeDirectory(directory)
+    }
+
+    private func refreshOllamaModels() {
+        let configuration = OllamaConfiguration(baseURL: ollamaBaseURL, model: ollamaModel)
+        isLoadingOllamaModels = true
+
+        Task {
+            do {
+                ollamaModels = try await OllamaVisionService.shared.availableModels(configuration: configuration)
+                if ollamaModels.contains(configuration.model) == false, let firstModel = ollamaModels.first {
+                    ollamaModel = firstModel
+                }
+            } catch {
+                ollamaModels = []
+                statusMessage = error.localizedDescription
+            }
+            isLoadingOllamaModels = false
+        }
     }
 
     private func prepareToChangeDirectory(_ directory: URL) {

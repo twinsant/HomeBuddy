@@ -8,6 +8,7 @@ import ImageIO
 import Photos
 import SwiftUI
 import UniformTypeIdentifiers
+import Vision
 
 struct PhotoLibraryView: View {
     let album: PhotoAlbum
@@ -106,6 +107,11 @@ private struct PhotoViewerView: View {
     @State private var image: NSImage?
     @State private var metadata: PhotoMetadata?
     @State private var isShowingInfo = true
+    @State private var isAnalyzing = false
+    @State private var analysisResult: VisionAnalysisResult?
+    @State private var detectedFaceCount: Int?
+    @State private var detectedFaceBoxes: [CGRect] = []
+    @State private var isOllamaAnalyzing = false
 
     init(assets: [PHAsset], initialIndex: Int, onBack: @escaping () -> Void) {
         self.assets = assets
@@ -131,13 +137,6 @@ private struct PhotoViewerView: View {
                 Text("照片 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)
                 Spacer()
-
-                Button {
-                    isShowingInfo.toggle()
-                } label: {
-                    Label("照片信息", systemImage: "info.circle")
-                }
-                .help("显示或隐藏照片信息")
             }
             .padding()
 
@@ -150,9 +149,22 @@ private struct PhotoViewerView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .padding(24)
+
+                        FaceBoundingBoxOverlay(imageSize: image.size, boxes: detectedFaceBoxes)
                     } else {
                         ProgressView()
                             .tint(.white)
+                    }
+
+                    if let detectedFaceCount {
+                        Text(detectedFaceCount == 0 ? "未检测到人脸" : "检测到 \(detectedFaceCount) 张人脸")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.black.opacity(0.7), in: Capsule())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(16)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -187,6 +199,54 @@ private struct PhotoViewerView: View {
             loadCurrentImage()
             loadMetadata()
         }
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    isShowingInfo.toggle()
+                } label: {
+                    Label("照片信息", systemImage: "info.circle")
+                }
+                .help("显示或隐藏照片信息")
+
+                Button {
+                    analyzeCurrentImage(.text)
+                } label: {
+                    Label("识别文字", systemImage: "text.viewfinder")
+                }
+                .disabled(image == nil || isAnalyzing)
+                .help("识别当前照片中的文字")
+
+                Button {
+                    analyzeCurrentImage(.barcode)
+                } label: {
+                    Label("识别二维码和条码", systemImage: "barcode.viewfinder")
+                }
+                .disabled(image == nil || isAnalyzing)
+                .help("识别当前照片中的二维码和条码")
+
+                Button {
+                    analyzeCurrentImage(.faces)
+                } label: {
+                    Label("检测人脸", systemImage: "face.smiling")
+                }
+                .disabled(image == nil || isAnalyzing)
+                .help("检测当前照片中的人脸")
+
+                Button {
+                    analyzeCurrentImageWithOllama()
+                } label: {
+                    Label("Ollama 识图", systemImage: "brain")
+                }
+                .disabled(image == nil || isAnalyzing || isOllamaAnalyzing)
+                .help("使用本机 Ollama 视觉模型描述当前照片")
+
+                if isAnalyzing || isOllamaAnalyzing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help(isOllamaAnalyzing ? "Ollama 正在分析照片" : "正在分析照片")
+                }
+            }
+        }
         .onMoveCommand { direction in
             switch direction {
             case .left: showPrevious()
@@ -195,6 +255,9 @@ private struct PhotoViewerView: View {
             }
         }
         .onExitCommand(perform: onBack)
+        .sheet(item: $analysisResult) { result in
+            VisionAnalysisResultView(result: result)
+        }
     }
 
     private func showPrevious() {
@@ -209,6 +272,10 @@ private struct PhotoViewerView: View {
 
     private func loadCurrentImage() {
         image = nil
+        analysisResult = nil
+        detectedFaceCount = nil
+        detectedFaceBoxes = []
+        isOllamaAnalyzing = false
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -261,6 +328,221 @@ private struct PhotoViewerView: View {
                 metadata = parsedMetadata
             }
         }
+    }
+
+    private func analyzeCurrentImage(_ type: VisionAnalysisType) {
+        guard let image,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            if type != .faces {
+                analysisResult = VisionAnalysisResult(
+                    title: "无法分析照片",
+                    message: "当前照片还没有加载完成。"
+                )
+            }
+            return
+        }
+
+        isAnalyzing = true
+        analysisResult = nil
+        detectedFaceCount = nil
+        detectedFaceBoxes = []
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.performAnalysis(type, on: cgImage)
+            Task { @MainActor in
+                isAnalyzing = false
+                detectedFaceCount = result.faceCount
+                detectedFaceBoxes = result.faceBoxes
+                analysisResult = type == .faces ? nil : result
+            }
+        }
+    }
+
+    private func analyzeCurrentImageWithOllama() {
+        guard let image,
+              let imageData = Self.jpegData(from: image)
+        else {
+            analysisResult = VisionAnalysisResult(
+                title: "无法分析照片",
+                message: "当前照片还没有加载完成。"
+            )
+            return
+        }
+
+        let assetID = currentAsset.localIdentifier
+        let configuration = OllamaConfiguration.current
+        isOllamaAnalyzing = true
+        analysisResult = nil
+
+        Task {
+            do {
+                let text = try await OllamaVisionService.shared.analyze(
+                    imageData: imageData,
+                    configuration: configuration
+                )
+                guard currentAsset.localIdentifier == assetID else { return }
+                isOllamaAnalyzing = false
+                analysisResult = VisionAnalysisResult(title: "Ollama 图片识别结果", message: text)
+            } catch {
+                guard currentAsset.localIdentifier == assetID else { return }
+                isOllamaAnalyzing = false
+                analysisResult = VisionAnalysisResult(
+                    title: "Ollama 识别失败",
+                    message: "\(error.localizedDescription)\n\n请确认 Ollama 已启动，并且设置中的模型支持图片输入。"
+                )
+            }
+        }
+    }
+
+    private static func jpegData(from image: NSImage) -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData)
+        else { return nil }
+
+        return bitmap.representation(
+            using: .jpeg,
+            properties: [.compressionFactor: 0.8]
+        )
+    }
+
+    private static func performAnalysis(_ type: VisionAnalysisType, on image: CGImage) -> VisionAnalysisResult {
+        do {
+            switch type {
+            case .text:
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+                request.usesLanguageCorrection = true
+                try VNImageRequestHandler(cgImage: image).perform([request])
+
+                let text = (request.results ?? []).compactMap {
+                    $0.topCandidates(1).first?.string
+                }
+                return VisionAnalysisResult(
+                    title: "文字识别结果",
+                    message: text.isEmpty ? "没有识别到文字。" : text.joined(separator: "\n")
+                )
+
+            case .barcode:
+                let request = VNDetectBarcodesRequest()
+                try VNImageRequestHandler(cgImage: image).perform([request])
+
+                let observations: [VNBarcodeObservation] = request.results ?? []
+                let codes: [String] = observations.compactMap { observation in
+                    guard let value = observation.payloadStringValue else { return nil }
+                    let type = observation.symbology.rawValue
+                    return "\(type)：\(value)"
+                }
+                return VisionAnalysisResult(
+                    title: "二维码和条码结果",
+                    message: codes.isEmpty ? "没有识别到二维码或条码。" : codes.joined(separator: "\n")
+                )
+
+            case .faces:
+                let request = VNDetectFaceRectanglesRequest()
+                try VNImageRequestHandler(cgImage: image).perform([request])
+                let observations: [VNFaceObservation] = request.results ?? []
+                let count = observations.count
+                return VisionAnalysisResult(
+                    title: "人脸检测结果",
+                    message: count == 0 ? "没有检测到人脸。" : "检测到 \(count) 张人脸。",
+                    faceCount: count,
+                    faceBoxes: observations.map(\.boundingBox)
+                )
+            }
+        } catch {
+            return VisionAnalysisResult(title: "分析失败", message: error.localizedDescription)
+        }
+    }
+}
+
+private enum VisionAnalysisType {
+    case text
+    case barcode
+    case faces
+}
+
+private struct VisionAnalysisResult: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let faceCount: Int?
+    let faceBoxes: [CGRect]
+
+    init(title: String, message: String, faceCount: Int? = nil, faceBoxes: [CGRect] = []) {
+        self.title = title
+        self.message = message
+        self.faceCount = faceCount
+        self.faceBoxes = faceBoxes
+    }
+}
+
+private struct FaceBoundingBoxOverlay: View {
+    let imageSize: CGSize
+    let boxes: [CGRect]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let contentSize = CGSize(
+                width: max(proxy.size.width - 48, 0),
+                height: max(proxy.size.height - 48, 0)
+            )
+            let scale = min(
+                contentSize.width / max(imageSize.width, 1),
+                contentSize.height / max(imageSize.height, 1)
+            )
+            let displayedSize = CGSize(
+                width: imageSize.width * scale,
+                height: imageSize.height * scale
+            )
+            let origin = CGPoint(
+                x: (proxy.size.width - displayedSize.width) / 2,
+                y: (proxy.size.height - displayedSize.height) / 2
+            )
+
+            ForEach(Array(boxes.enumerated()), id: \.offset) { _, box in
+                Rectangle()
+                    .stroke(.red, lineWidth: 3)
+                    .frame(
+                        width: box.width * displayedSize.width,
+                        height: box.height * displayedSize.height
+                    )
+                    .position(
+                        x: origin.x + box.midX * displayedSize.width,
+                        y: origin.y + (1 - box.midY) * displayedSize.height
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct VisionAnalysisResultView: View {
+    let result: VisionAnalysisResult
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label(result.title, systemImage: "wand.and.stars")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                Button("完成") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                Text(result.message)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 420, minHeight: 240)
     }
 }
 
