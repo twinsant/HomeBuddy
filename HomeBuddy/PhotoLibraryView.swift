@@ -14,6 +14,7 @@ struct PhotoLibraryView: View {
     let album: PhotoAlbum
     let assets: [PHAsset]
     @State private var selectedIndex: Int?
+    @State private var isShowingBatchRecognition = false
 
     private let columns = [
         GridItem(.adaptive(minimum: 160, maximum: 240), spacing: 16)
@@ -56,6 +57,20 @@ struct PhotoLibraryView: View {
         }
         .navigationTitle(album.title)
         .frame(minWidth: 420, minHeight: 300)
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isShowingBatchRecognition = true
+                } label: {
+                    Label("Ollama 批量识图", systemImage: "brain")
+                }
+                .disabled(assets.isEmpty)
+                .help("识别当前相册中的全部照片")
+            }
+        }
+        .sheet(isPresented: $isShowingBatchRecognition) {
+            BatchRecognitionView(assets: assets)
+        }
     }
 }
 
@@ -106,6 +121,7 @@ private struct PhotoViewerView: View {
     @State private var currentIndex: Int
     @State private var image: NSImage?
     @State private var metadata: PhotoMetadata?
+    @State private var ollamaText: String?
     @State private var isShowingInfo = true
     @State private var isAnalyzing = false
     @State private var analysisResult: VisionAnalysisResult?
@@ -170,7 +186,7 @@ private struct PhotoViewerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if isShowingInfo {
-                    PhotoInfoSidebar(asset: currentAsset, metadata: metadata)
+                    PhotoInfoSidebar(asset: currentAsset, metadata: metadata, ollamaText: ollamaText)
                         .frame(width: 300)
                 }
             }
@@ -198,6 +214,7 @@ private struct PhotoViewerView: View {
         .task(id: currentAsset.localIdentifier) {
             loadCurrentImage()
             loadMetadata()
+            loadOllamaText()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -310,6 +327,15 @@ private struct PhotoViewerView: View {
         }
     }
 
+    private func loadOllamaText() {
+        let assetID = currentAsset.localIdentifier
+        ollamaText = nil
+        PhotoMetadataCache.shared.ollamaText(for: currentAsset) { text in
+            guard currentAsset.localIdentifier == assetID else { return }
+            ollamaText = text
+        }
+    }
+
     private func loadMetadataFromPhotos(asset: PHAsset, assetID: String) {
 
         let options = PHImageRequestOptions()
@@ -382,6 +408,8 @@ private struct PhotoViewerView: View {
                 )
                 guard currentAsset.localIdentifier == assetID else { return }
                 isOllamaAnalyzing = false
+                PhotoMetadataCache.shared.saveOllamaText(text, model: configuration.model, for: currentAsset)
+                ollamaText = text
                 analysisResult = VisionAnalysisResult(title: "Ollama 图片识别结果", message: text)
             } catch {
                 guard currentAsset.localIdentifier == assetID else { return }
@@ -396,9 +424,19 @@ private struct PhotoViewerView: View {
 
     private static func jpegData(from image: NSImage) -> Data? {
         guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData)
+              let source = CGImageSourceCreateWithData(tiffData as CFData, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+                  source,
+                  0,
+                  [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 1024
+                  ] as CFDictionary
+              )
         else { return nil }
 
+        let bitmap = NSBitmapImageRep(cgImage: thumbnail)
         return bitmap.representation(
             using: .jpeg,
             properties: [.compressionFactor: 0.8]
@@ -637,6 +675,7 @@ struct PhotoMetadata {
 private struct PhotoInfoSidebar: View {
     let asset: PHAsset
     let metadata: PhotoMetadata?
+    let ollamaText: String?
 
     var body: some View {
         ScrollView {
@@ -680,6 +719,18 @@ private struct PhotoInfoSidebar: View {
                     }
                     if !shootingRows.isEmpty {
                         infoSection("拍摄信息", rows: shootingRows)
+                    }
+
+                    if let ollamaText, !ollamaText.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Ollama 识别文字")
+                                .font(.headline)
+                            Text(ollamaText)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                        }
                     }
                 } else {
                     ProgressView("正在读取照片信息…")

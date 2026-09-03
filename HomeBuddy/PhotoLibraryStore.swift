@@ -227,6 +227,43 @@ final class PhotoMetadataCache {
         }
     }
 
+    func ollamaText(for asset: PHAsset, completion: @escaping (String?) -> Void) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            let result = self?.readOllamaText(
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height
+            )
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+    }
+
+    func saveOllamaText(_ text: String, model: String, for asset: PHAsset) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            self?.writeOllamaText(
+                text,
+                model: model,
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height
+            )
+        }
+    }
+
     private var databaseURLValue: URL?
 
     private func openDatabase() {
@@ -316,13 +353,25 @@ final class PhotoMetadataCache {
             iso TEXT,
             focal_length TEXT,
             location TEXT,
-            metadata_updated_at REAL
+            metadata_updated_at REAL,
+            ollama_text TEXT,
+            ollama_model TEXT,
+            ollama_updated_at REAL
         );
         """
         sqlite3_exec(database, sql, nil, nil, nil)
         // 仅为在该字段加入前创建的缓存数据库执行迁移。
         if !columnExists("metadata_updated_at", in: "photo_metadata") {
             sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN metadata_updated_at REAL;", nil, nil, nil)
+        }
+        if !columnExists("ollama_text", in: "photo_metadata") {
+            sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_text TEXT;", nil, nil, nil)
+        }
+        if !columnExists("ollama_model", in: "photo_metadata") {
+            sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_model TEXT;", nil, nil, nil)
+        }
+        if !columnExists("ollama_updated_at", in: "photo_metadata") {
+            sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_updated_at REAL;", nil, nil, nil)
         }
     }
 
@@ -371,7 +420,7 @@ final class PhotoMetadataCache {
 
     private func write(_ metadata: PhotoMetadata, identifier: String, modificationTime: Double, width: Int, height: Int) {
         guard let database else { return }
-        let sql = "INSERT OR REPLACE INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, file_type = excluded.file_type, file_size = excluded.file_size, pixel_size = excluded.pixel_size, creation_date = excluded.creation_date, camera = excluded.camera, lens = excluded.lens, exposure = excluded.exposure, iso = excluded.iso, focal_length = excluded.focal_length, location = excluded.location, metadata_updated_at = excluded.metadata_updated_at;"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }
@@ -393,6 +442,36 @@ final class PhotoMetadataCache {
         } else {
             sqlite3_bind_null(statement, 15)
         }
+        sqlite3_step(statement)
+    }
+
+    private func readOllamaText(identifier: String, modificationTime: Double, width: Int, height: Int) -> String? {
+        guard let database else { return nil }
+        let sql = "SELECT ollama_text FROM photo_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? LIMIT 1;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+        bindText(identifier, to: statement, at: 1)
+        sqlite3_bind_double(statement, 2, modificationTime)
+        sqlite3_bind_int(statement, 3, Int32(width))
+        sqlite3_bind_int(statement, 4, Int32(height))
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return text(from: statement, at: 0)
+    }
+
+    private func writeOllamaText(_ text: String, model: String, identifier: String, modificationTime: Double, width: Int, height: Int) {
+        guard let database else { return }
+        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, ollama_text, ollama_model, ollama_updated_at) VALUES (?, ?, ?, ?, '', '', '', '', ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, ollama_text = excluded.ollama_text, ollama_model = excluded.ollama_model, ollama_updated_at = excluded.ollama_updated_at;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(statement) }
+        bindText(identifier, to: statement, at: 1)
+        sqlite3_bind_double(statement, 2, modificationTime)
+        sqlite3_bind_int(statement, 3, Int32(width))
+        sqlite3_bind_int(statement, 4, Int32(height))
+        bindText(text, to: statement, at: 5)
+        bindText(model, to: statement, at: 6)
+        sqlite3_bind_double(statement, 7, Date().timeIntervalSince1970)
         sqlite3_step(statement)
     }
 
