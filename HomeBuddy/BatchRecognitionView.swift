@@ -185,7 +185,7 @@ struct BatchRecognitionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("Ollama 批量识图", systemImage: "brain")
                     .font(.title2.weight(.semibold))
@@ -197,82 +197,96 @@ struct BatchRecognitionView: View {
                     .keyboardShortcut(.cancelAction)
             }
 
-            Text("已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。")
-                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            ProgressView(value: model.progress)
-            HStack {
-                Text("进度：\(model.completed) / \(model.assets.count)")
-                Spacer()
-                Text("剩余：\(model.remainingCount) 张")
-            }
-            .font(.headline)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProgressView(value: model.progress)
+                        HStack {
+                            Text("进度：\(model.completed) / \(model.assets.count)")
+                            Spacer(minLength: 16)
+                            Text("剩余：\(model.remainingCount) 张")
+                        }
+                        .font(.headline)
+                    }
 
-            if let remaining = model.estimatedRemaining {
-                Text("预计剩余时间：\(remaining.formattedDuration)")
-                    .foregroundStyle(.secondary)
-            } else if model.phase == .running {
-                Text("正在计算预计剩余时间…")
-                    .foregroundStyle(.secondary)
-            }
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let remaining = model.estimatedRemaining {
+                            Text("预计剩余时间：\(remaining.formattedDuration)")
+                        } else if model.phase == .running {
+                            Text("正在计算预计剩余时间…")
+                        }
 
-            if let average = model.averageProcessingTime {
-                Text("平均处理时间：\(average.formattedDuration)")
-                    .foregroundStyle(.secondary)
-            }
-
-            if !model.currentName.isEmpty {
-                HStack(spacing: 12) {
-                    Group {
-                        if let currentThumbnail {
-                            currentThumbnail
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            ProgressView()
+                        if let average = model.averageProcessingTime {
+                            Text("平均处理时间：\(average.formattedDuration)")
                         }
                     }
-                    .frame(width: 56, height: 56)
-                    .background(.quaternary)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.secondary)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("当前处理")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(model.currentName)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .textSelection(.enabled)
+                    if !model.currentName.isEmpty {
+                        HStack(spacing: 12) {
+                            Group {
+                                if let currentThumbnail {
+                                    currentThumbnail
+                                        .resizable()
+                                        .scaledToFill()
+                                } else {
+                                    ProgressView()
+                                }
+                            }
+                            .frame(width: 56, height: 56)
+                            .background(.quaternary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("当前处理")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(model.currentName)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .task(id: model.currentName) {
+                            loadCurrentThumbnail()
+                        }
+                    }
+
+                    if !model.failures.isEmpty {
+                        Text("失败 \(model.failures.count) 张（恢复时会重试）")
+                            .foregroundStyle(.orange)
                     }
                 }
-                .task(id: model.currentName) {
-                    loadCurrentThumbnail()
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if !model.failures.isEmpty {
-                Text("失败 \(model.failures.count) 张（恢复时会重试）")
-                    .foregroundStyle(.orange)
-            }
-
-            Spacer()
+            Divider()
+                .padding(.top, 18)
 
             HStack {
-                if model.phase == .finished {
-                    Label("全部处理完成", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else if model.phase != .running {
-                    Button(model.phase == .ready ? "开始识别" : "恢复识别") {
-                        model.startOrResume()
+                Group {
+                    if model.phase == .finished {
+                        Label("全部处理完成", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else if model.phase != .running {
+                        Button(model.phase == .ready ? "开始识别" : "恢复识别") {
+                            model.startOrResume()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
                 Spacer()
             }
+            .padding(.top, 14)
         }
         .padding(24)
-        .frame(width: 520, height: 360)
+        .frame(minWidth: 600, idealWidth: 640, minHeight: 460, idealHeight: 520)
         .onAppear {
             if model.phase == .ready { model.startOrResume() }
         }
