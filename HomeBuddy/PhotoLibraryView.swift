@@ -15,41 +15,83 @@ struct PhotoLibraryView: View {
     let assets: [PHAsset]
     @State private var selectedIndex: Int?
     @State private var isShowingBatchRecognition = false
+    @State private var isBatchRecognitionMinimized = false
+    @StateObject private var batchRecognitionModel: BatchRecognitionModel
+    @State private var searchText = ""
+    @State private var searchResultIDs: Set<String>?
+
+    init(album: PhotoAlbum, assets: [PHAsset]) {
+        self.album = album
+        self.assets = assets
+        _batchRecognitionModel = StateObject(wrappedValue: BatchRecognitionModel(assets: assets))
+    }
 
     private let columns = [
         GridItem(.adaptive(minimum: 160, maximum: 240), spacing: 16)
     ]
 
+    private var searchKeywords: [String] {
+        searchText
+            .components(separatedBy: [" ", "\t", "\n", ",", "，"])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var displayedAssets: [PHAsset] {
+        guard !searchKeywords.isEmpty, let searchResultIDs else { return assets }
+        return assets.filter { searchResultIDs.contains($0.localIdentifier) }
+    }
+
+    private var searchTaskID: String {
+        let keywords = searchKeywords.joined(separator: "\u{1F}" )
+        let assetIDs = assets.map(\.localIdentifier).joined(separator: "\u{1F}")
+        return "\(keywords)|\(assetIDs)"
+    }
+
     var body: some View {
         Group {
-            if let selectedIndex {
+            if let selectedIndex, displayedAssets.indices.contains(selectedIndex) {
                 PhotoViewerView(
-                    assets: assets,
+                    assets: displayedAssets,
                     initialIndex: selectedIndex,
                     onBack: { self.selectedIndex = nil }
                 )
-            } else if assets.isEmpty {
+            } else if displayedAssets.isEmpty {
                 ContentUnavailableView(
-                    "“\(album.title)”中还没有照片",
+                    searchKeywords.isEmpty ? "“\(album.title)”中还没有照片" : "没有匹配的照片",
                     systemImage: "photo.on.rectangle.angled",
-                    description: Text("这个相册中暂时没有可显示的图片。")
+                    description: Text(
+                        searchKeywords.isEmpty
+                            ? "这个相册中暂时没有可显示的图片。"
+                            : "没有找到包含全部关键词的 Ollama 识别文字。"
+                    )
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { index, asset in
-                            Button {
-                                selectedIndex = index
-                            } label: {
-                                PhotoThumbnailView(asset: asset)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                            .contentShape(Rectangle())
-                            .accessibilityLabel("查看照片")
-                            .help("点击查看大图")
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !searchKeywords.isEmpty {
+                            Text("找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
+
+                        LazyVGrid(columns: columns, spacing: 16) {
+                            ForEach(Array(displayedAssets.enumerated()), id: \.element.localIdentifier) { index, asset in
+                                Button {
+                                    guard displayedAssets.indices.contains(index) else { return }
+                                    selectedIndex = index
+                                } label: {
+                                    PhotoThumbnailView(asset: asset)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                                .accessibilityLabel("查看照片")
+                                .help("点击查看大图")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .padding()
                 }
@@ -57,20 +99,74 @@ struct PhotoLibraryView: View {
         }
         .navigationTitle(album.title)
         .frame(minWidth: 420, minHeight: 300)
+        .searchable(text: $searchText, prompt: "搜索 Ollama 识别文字")
+        .onChange(of: searchText) { _, _ in
+            // 搜索结果数组会异步变化，旧的大图索引不再可靠。
+            selectedIndex = nil
+        }
+        .task(id: searchTaskID) {
+            let keywords = searchKeywords
+            guard !keywords.isEmpty else {
+                searchResultIDs = nil
+                return
+            }
+
+            searchResultIDs = nil
+            PhotoMetadataCache.shared.assetIDs(matchingOllamaKeywords: keywords) { result in
+                guard searchKeywords == keywords else { return }
+                searchResultIDs = result
+            }
+        }
         .toolbar {
             ToolbarItem {
                 Button {
-                    isShowingBatchRecognition = true
+                    if isShowingBatchRecognition {
+                        isBatchRecognitionMinimized = false
+                    } else {
+                        isShowingBatchRecognition = true
+                        isBatchRecognitionMinimized = false
+                    }
                 } label: {
                     Label("Ollama 批量识图", systemImage: "brain")
                 }
                 .disabled(assets.isEmpty)
                 .help("识别当前相册中的全部照片")
+                .popover(isPresented: batchRecognitionPopoverBinding) {
+                    BatchRecognitionView(
+                        model: batchRecognitionModel,
+                        isPresented: $isShowingBatchRecognition,
+                        isMinimized: $isBatchRecognitionMinimized
+                    )
+                }
+            }
+
+            if isShowingBatchRecognition && isBatchRecognitionMinimized {
+                ToolbarItem(placement: .navigation) {
+                    BatchRecognitionToolbarView(
+                        model: batchRecognitionModel,
+                        isMinimized: $isBatchRecognitionMinimized,
+                        isPresented: $isShowingBatchRecognition
+                    )
+                }
             }
         }
-        .sheet(isPresented: $isShowingBatchRecognition) {
-            BatchRecognitionView(assets: assets)
+        .onChange(of: isShowingBatchRecognition) { _, isShowing in
+            if isShowing {
+                isBatchRecognitionMinimized = false
+                batchRecognitionModel.startOrResume()
+            }
         }
+    }
+
+    private var batchRecognitionPopoverBinding: Binding<Bool> {
+        Binding(
+            get: { isShowingBatchRecognition && !isBatchRecognitionMinimized },
+            set: { isPresented in
+                if !isPresented {
+                    isBatchRecognitionMinimized = true
+                }
+            }
+        )
     }
 }
 
@@ -128,12 +224,19 @@ private struct PhotoViewerView: View {
     @State private var detectedFaceCount: Int?
     @State private var detectedFaceBoxes: [CGRect] = []
     @State private var isOllamaAnalyzing = false
+    @State private var zoomScale: CGFloat = 1
+    @GestureState private var gestureScale: CGFloat = 1
+
+    private var displayedZoomScale: CGFloat {
+        min(max(zoomScale * gestureScale, 1), 5)
+    }
 
     init(assets: [PHAsset], initialIndex: Int, onBack: @escaping () -> Void) {
         self.assets = assets
-        self.initialIndex = initialIndex
+        let boundedIndex = assets.isEmpty ? 0 : min(max(initialIndex, 0), assets.count - 1)
+        self.initialIndex = boundedIndex
         self.onBack = onBack
-        _currentIndex = State(initialValue: initialIndex)
+        _currentIndex = State(initialValue: boundedIndex)
     }
 
     private var currentAsset: PHAsset {
@@ -161,12 +264,24 @@ private struct PhotoViewerView: View {
                     Color.black
 
                     if let image {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .padding(24)
+                        ZStack {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .padding(24)
 
-                        FaceBoundingBoxOverlay(imageSize: image.size, boxes: detectedFaceBoxes)
+                            FaceBoundingBoxOverlay(imageSize: image.size, boxes: detectedFaceBoxes)
+                        }
+                        .scaleEffect(displayedZoomScale)
+                        .gesture(
+                            MagnificationGesture()
+                                .updating($gestureScale) { value, state, _ in
+                                    state = value
+                                }
+                                .onEnded { value in
+                                    zoomScale = min(max(zoomScale * value, 1), 5)
+                                }
+                        )
                     } else {
                         ProgressView()
                             .tint(.white)
@@ -184,6 +299,7 @@ private struct PhotoViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
 
                 if isShowingInfo {
                     PhotoInfoSidebar(asset: currentAsset, metadata: metadata, ollamaText: ollamaText)
@@ -262,6 +378,33 @@ private struct PhotoViewerView: View {
                         .controlSize(.small)
                         .help(isOllamaAnalyzing ? "Ollama 正在分析照片" : "正在分析照片")
                 }
+
+                Divider()
+
+                Button {
+                    zoomScale = min(zoomScale + 0.25, 5)
+                } label: {
+                    Label("放大", systemImage: "plus.magnifyingglass")
+                }
+                .disabled(image == nil || zoomScale >= 5)
+                .help("放大照片")
+
+                Button {
+                    zoomScale = max(zoomScale - 0.25, 1)
+                } label: {
+                    Label("缩小", systemImage: "minus.magnifyingglass")
+                }
+                .disabled(image == nil || zoomScale <= 1)
+                .help("缩小照片")
+
+                Button {
+                    zoomScale = 1
+                } label: {
+                    Text("\(Int(displayedZoomScale * 100))%")
+                        .monospacedDigit()
+                }
+                .disabled(image == nil)
+                .help("还原为适合窗口的大小")
             }
         }
         .onMoveCommand { direction in
@@ -289,6 +432,7 @@ private struct PhotoViewerView: View {
 
     private func loadCurrentImage() {
         image = nil
+        zoomScale = 1
         analysisResult = nil
         detectedFaceCount = nil
         detectedFaceBoxes = []

@@ -27,6 +27,7 @@ struct ContentView: View {
         } detail: {
             if let selectedAlbum {
                 PhotoLibraryView(album: selectedAlbum, assets: photoLibrary.assets(for: selectedAlbum))
+                    .id(selectedAlbum.id)
             } else {
                 ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
             }

@@ -246,6 +246,19 @@ final class PhotoMetadataCache {
         }
     }
 
+    func assetIDs(matchingOllamaKeywords keywords: [String], completion: @escaping (Set<String>) -> Void) {
+        let normalizedKeywords = keywords
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        queue.async { [weak self] in
+            let result = self?.readAssetIDs(matchingOllamaKeywords: normalizedKeywords) ?? []
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+    }
+
     func saveOllamaText(_ text: String, model: String, for asset: PHAsset) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
@@ -457,6 +470,33 @@ final class PhotoMetadataCache {
         sqlite3_bind_int(statement, 4, Int32(height))
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return text(from: statement, at: 0)
+    }
+
+    private func readAssetIDs(matchingOllamaKeywords keywords: [String]) -> Set<String> {
+        guard let database, !keywords.isEmpty else { return [] }
+
+        let conditions = Array(repeating: "ollama_text LIKE ? ESCAPE '\\'", count: keywords.count)
+            .joined(separator: " AND ")
+        let sql = "SELECT asset_id FROM photo_metadata WHERE ollama_text IS NOT NULL AND ollama_text <> '' AND \(conditions);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        for (offset, keyword) in keywords.enumerated() {
+            let escapedKeyword = keyword
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%")
+                .replacingOccurrences(of: "_", with: "\\_")
+            bindText("%\(escapedKeyword)%", to: statement, at: Int32(offset + 1))
+        }
+
+        var identifiers = Set<String>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let identifier = text(from: statement, at: 0) {
+                identifiers.insert(identifier)
+            }
+        }
+        return identifiers
     }
 
     private func writeOllamaText(_ text: String, model: String, identifier: String, modificationTime: Double, width: Int, height: Int) {

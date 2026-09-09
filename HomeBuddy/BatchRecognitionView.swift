@@ -5,7 +5,7 @@ import Photos
 import SwiftUI
 
 @MainActor
-private final class BatchRecognitionModel: ObservableObject {
+final class BatchRecognitionModel: ObservableObject {
     enum Phase {
         case ready
         case running
@@ -176,13 +176,10 @@ private final class BatchRecognitionModel: ObservableObject {
 }
 
 struct BatchRecognitionView: View {
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var model: BatchRecognitionModel
+    @ObservedObject var model: BatchRecognitionModel
+    @Binding var isPresented: Bool
+    @Binding var isMinimized: Bool
     @State private var currentThumbnail: Image?
-
-    init(assets: [PHAsset]) {
-        _model = StateObject(wrappedValue: BatchRecognitionModel(assets: assets))
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -193,7 +190,13 @@ struct BatchRecognitionView: View {
                 if model.phase == .running {
                     Button("中断") { model.pause() }
                 }
-                Button("关闭") { dismiss() }
+                Button {
+                    isMinimized = true
+                } label: {
+                    Label("最小化", systemImage: "minus")
+                }
+                .help("最小化到相册界面，识别将在后台继续")
+                Button("关闭") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
             }
 
@@ -287,11 +290,14 @@ struct BatchRecognitionView: View {
         }
         .padding(24)
         .frame(minWidth: 600, idealWidth: 640, minHeight: 460, idealHeight: 520)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(.quaternary)
+        }
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
         .onAppear {
             if model.phase == .ready { model.startOrResume() }
-        }
-        .onDisappear {
-            if model.phase == .running { model.pause() }
         }
     }
 
@@ -318,6 +324,53 @@ struct BatchRecognitionView: View {
                 currentThumbnail = Image(nsImage: nsImage)
             }
         }
+    }
+}
+
+struct BatchRecognitionToolbarView: View {
+    @ObservedObject var model: BatchRecognitionModel
+    @Binding var isMinimized: Bool
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: model.phase == .finished ? "checkmark.circle.fill" : "brain")
+                .foregroundStyle(model.phase == .finished ? .green : .accentColor)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.phase == .finished ? "批量识图完成" : "Ollama 批量识图")
+                    .font(.subheadline.weight(.semibold))
+                Text("\(model.completed) / \(model.assets.count) · 剩余 \(model.remainingCount) 张")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: model.progress)
+                .frame(width: 90)
+
+            if model.phase == .running {
+                Button("中断") { model.pause() }
+            } else if model.phase == .paused {
+                Button("恢复") { model.startOrResume() }
+            }
+
+            Button {
+                isMinimized = false
+            } label: {
+                Label("展开", systemImage: "arrow.up.left.and.arrow.down.right")
+            }
+            .labelStyle(.iconOnly)
+            .help("展开批量识图进度")
+
+            Button {
+                isPresented = false
+            } label: {
+                Label("关闭", systemImage: "xmark")
+            }
+            .labelStyle(.iconOnly)
+            .help("隐藏批量识图面板，任务仍会继续")
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
