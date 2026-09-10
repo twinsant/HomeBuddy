@@ -34,6 +34,16 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem {
+                if let selectedAlbum {
+                    Text(selectedAlbum.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .help(selectedAlbum.title)
+                }
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
                 Button {
                     photoLibrary.refresh()
                 } label: {
@@ -41,6 +51,7 @@ struct ContentView: View {
                 }
                 .help("重新读取系统照片图库")
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .task {
             photoLibrary.requestAccessAndLoad()

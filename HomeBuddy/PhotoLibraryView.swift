@@ -97,7 +97,6 @@ struct PhotoLibraryView: View {
                 }
             }
         }
-        .navigationTitle(album.title)
         .frame(minWidth: 420, minHeight: 300)
         .searchable(text: $searchText, prompt: "搜索 Ollama 识别文字")
         .onChange(of: searchText) { _, _ in
@@ -118,7 +117,7 @@ struct PhotoLibraryView: View {
             }
         }
         .toolbar {
-            ToolbarItem {
+            ToolbarItem(id: "batchRecognition") {
                 Button {
                     if isShowingBatchRecognition {
                         isBatchRecognitionMinimized = false
@@ -127,28 +126,23 @@ struct PhotoLibraryView: View {
                         isBatchRecognitionMinimized = false
                     }
                 } label: {
-                    Label("Ollama 批量识图", systemImage: "brain")
+                    Label {
+                        Text("Ollama 批量识图")
+                    } icon: {
+                        AnimatedBatchIcon(isAnimating: batchRecognitionModel.phase == .running)
+                    }
                 }
                 .disabled(assets.isEmpty)
                 .help("识别当前相册中的全部照片")
                 .popover(isPresented: batchRecognitionPopoverBinding) {
                     BatchRecognitionView(
                         model: batchRecognitionModel,
-                        isPresented: $isShowingBatchRecognition,
-                        isMinimized: $isBatchRecognitionMinimized
-                    )
-                }
-            }
-
-            if isShowingBatchRecognition && isBatchRecognitionMinimized {
-                ToolbarItem(placement: .navigation) {
-                    BatchRecognitionToolbarView(
-                        model: batchRecognitionModel,
-                        isMinimized: $isBatchRecognitionMinimized,
                         isPresented: $isShowingBatchRecognition
                     )
                 }
             }
+            .sharedBackgroundVisibility(.hidden)
+
         }
         .onChange(of: isShowingBatchRecognition) { _, isShowing in
             if isShowing {
@@ -167,6 +161,23 @@ struct PhotoLibraryView: View {
                 }
             }
         )
+    }
+}
+
+private struct AnimatedBatchIcon: View {
+    let isAnimating: Bool
+
+    var body: some View {
+        Image(systemName: "photo.stack")
+            .foregroundStyle(Color.accentColor)
+            .scaleEffect(isAnimating ? 1.14 : 1)
+            .animation(
+                isAnimating
+                    ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                    : .default,
+                value: isAnimating
+            )
+            .help(isAnimating ? "Ollama 正在后台识别照片" : "打开 Ollama 批量识图")
     }
 }
 
@@ -231,7 +242,11 @@ private struct PhotoViewerView: View {
         min(max(zoomScale * gestureScale, 1), 5)
     }
 
-    init(assets: [PHAsset], initialIndex: Int, onBack: @escaping () -> Void) {
+    init(
+        assets: [PHAsset],
+        initialIndex: Int,
+        onBack: @escaping () -> Void
+    ) {
         self.assets = assets
         let boundedIndex = assets.isEmpty ? 0 : min(max(initialIndex, 0), assets.count - 1)
         self.initialIndex = boundedIndex
@@ -333,14 +348,29 @@ private struct PhotoViewerView: View {
             loadOllamaText()
         }
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItem {
                 Button {
                     isShowingInfo.toggle()
                 } label: {
                     Label("照片信息", systemImage: "info.circle")
                 }
                 .help("显示或隐藏照片信息")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
+                Button {
+                    copyCurrentImage()
+                } label: {
+                    Label("复制图片", systemImage: "doc.on.doc")
+                }
+                .disabled(image == nil)
+                .keyboardShortcut("c", modifiers: .command)
+                .help("复制当前图片（⌘C）")
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
                 Button {
                     analyzeCurrentImage(.text)
                 } label: {
@@ -348,7 +378,10 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || isAnalyzing)
                 .help("识别当前照片中的文字")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 Button {
                     analyzeCurrentImage(.barcode)
                 } label: {
@@ -356,7 +389,10 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || isAnalyzing)
                 .help("识别当前照片中的二维码和条码")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 Button {
                     analyzeCurrentImage(.faces)
                 } label: {
@@ -364,7 +400,10 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || isAnalyzing)
                 .help("检测当前照片中的人脸")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 Button {
                     analyzeCurrentImageWithOllama()
                 } label: {
@@ -372,15 +411,19 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || isAnalyzing || isOllamaAnalyzing)
                 .help("使用本机 Ollama 视觉模型描述当前照片")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 if isAnalyzing || isOllamaAnalyzing {
                     ProgressView()
                         .controlSize(.small)
                         .help(isOllamaAnalyzing ? "Ollama 正在分析照片" : "正在分析照片")
                 }
+            }
+            .sharedBackgroundVisibility(.hidden)
 
-                Divider()
-
+            ToolbarItem {
                 Button {
                     zoomScale = min(zoomScale + 0.25, 5)
                 } label: {
@@ -388,7 +431,10 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || zoomScale >= 5)
                 .help("放大照片")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 Button {
                     zoomScale = max(zoomScale - 0.25, 1)
                 } label: {
@@ -396,7 +442,10 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || zoomScale <= 1)
                 .help("缩小照片")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
+            ToolbarItem {
                 Button {
                     zoomScale = 1
                 } label: {
@@ -406,6 +455,7 @@ private struct PhotoViewerView: View {
                 .disabled(image == nil)
                 .help("还原为适合窗口的大小")
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .onMoveCommand { direction in
             switch direction {
@@ -430,7 +480,16 @@ private struct PhotoViewerView: View {
         currentIndex += 1
     }
 
+    private func copyCurrentImage() {
+        guard let image else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+    }
+
     private func loadCurrentImage() {
+        let asset = currentAsset
+        let assetID = asset.localIdentifier
         image = nil
         zoomScale = 1
         analysisResult = nil
@@ -444,13 +503,14 @@ private struct PhotoViewerView: View {
         options.isNetworkAccessAllowed = true
 
         PHImageManager.default().requestImage(
-            for: currentAsset,
+            for: asset,
             targetSize: CGSize(width: 2400, height: 2400),
             contentMode: .aspectFit,
             options: options
         ) { nsImage, _ in
             guard let nsImage else { return }
             Task { @MainActor in
+                guard currentAsset.localIdentifier == assetID else { return }
                 image = nsImage
             }
         }

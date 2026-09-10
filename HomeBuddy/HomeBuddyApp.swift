@@ -33,6 +33,7 @@ struct HomeBuddyApp: App {
             ContentView()
         }
         .modelContainer(sharedModelContainer)
+        .windowToolbarStyle(.unified(showsTitle: false))
 
         Settings {
             SettingsView()

@@ -22,16 +22,27 @@ final class BatchRecognitionModel: ObservableObject {
     @Published private(set) var averageProcessingTime: TimeInterval?
 
     private var task: Task<Void, Never>?
+    private var terminationObserver: NSObjectProtocol?
     private var countedAssetIDs = Set<String>()
     private var totalProcessingTime: TimeInterval = 0
     private var processingCount = 0
 
     init(assets: [PHAsset]) {
         self.assets = assets
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+        }
     }
 
     deinit {
         task?.cancel()
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
     }
 
     var progress: Double {
@@ -60,6 +71,14 @@ final class BatchRecognitionModel: ObservableObject {
         guard phase == .running else { return }
         task?.cancel()
         phase = .paused
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        if phase == .running {
+            phase = .paused
+        }
     }
 
     private func run() async {
@@ -178,7 +197,6 @@ final class BatchRecognitionModel: ObservableObject {
 struct BatchRecognitionView: View {
     @ObservedObject var model: BatchRecognitionModel
     @Binding var isPresented: Bool
-    @Binding var isMinimized: Bool
     @State private var currentThumbnail: Image?
 
     var body: some View {
@@ -190,18 +208,12 @@ struct BatchRecognitionView: View {
                 if model.phase == .running {
                     Button("中断") { model.pause() }
                 }
-                Button {
-                    isMinimized = true
-                } label: {
-                    Label("最小化", systemImage: "minus")
-                }
-                .help("最小化到相册界面，识别将在后台继续")
                 Button("关闭") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -229,34 +241,42 @@ struct BatchRecognitionView: View {
                     }
                     .foregroundStyle(.secondary)
 
-                    if !model.currentName.isEmpty {
-                        HStack(spacing: 12) {
-                            Group {
-                                if let currentThumbnail {
-                                    currentThumbnail
-                                        .resizable()
-                                        .scaledToFill()
-                                } else {
-                                    ProgressView()
-                                }
-                            }
-                            .frame(width: 56, height: 56)
-                            .background(.quaternary)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("当前处理")
-                                    .font(.caption)
+                    HStack(spacing: 12) {
+                        Group {
+                            if let currentThumbnail {
+                                currentThumbnail
+                                    .resizable()
+                                    .scaledToFill()
+                            } else if model.currentName.isEmpty {
+                                Image(systemName: "photo")
+                                    .font(.title3)
                                     .foregroundStyle(.secondary)
-                                Text(model.currentName)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                ProgressView()
+                                    .controlSize(.small)
                             }
                         }
-                        .task(id: model.currentName) {
+                        .frame(width: 56, height: 56)
+                        .background(.quaternary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("当前处理")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(model.currentName.isEmpty ? "等待下一张照片…" : model.currentName)
+                                .font(.caption)
+                                .foregroundStyle(model.currentName.isEmpty ? .secondary : .primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .task(id: model.currentName) {
+                        if model.currentName.isEmpty {
+                            currentThumbnail = nil
+                        } else {
                             loadCurrentThumbnail()
                         }
                     }
@@ -270,7 +290,7 @@ struct BatchRecognitionView: View {
             }
 
             Divider()
-                .padding(.top, 18)
+                .padding(.top, 12)
 
             HStack {
                 Group {
@@ -286,10 +306,11 @@ struct BatchRecognitionView: View {
                 }
                 Spacer()
             }
-            .padding(.top, 14)
+            .padding(.top, 10)
         }
-        .padding(24)
-        .frame(minWidth: 600, idealWidth: 640, minHeight: 460, idealHeight: 520)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(minWidth: 520, idealWidth: 560)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
@@ -324,53 +345,6 @@ struct BatchRecognitionView: View {
                 currentThumbnail = Image(nsImage: nsImage)
             }
         }
-    }
-}
-
-struct BatchRecognitionToolbarView: View {
-    @ObservedObject var model: BatchRecognitionModel
-    @Binding var isMinimized: Bool
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: model.phase == .finished ? "checkmark.circle.fill" : "brain")
-                .foregroundStyle(model.phase == .finished ? .green : .accentColor)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.phase == .finished ? "批量识图完成" : "Ollama 批量识图")
-                    .font(.subheadline.weight(.semibold))
-                Text("\(model.completed) / \(model.assets.count) · 剩余 \(model.remainingCount) 张")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ProgressView(value: model.progress)
-                .frame(width: 90)
-
-            if model.phase == .running {
-                Button("中断") { model.pause() }
-            } else if model.phase == .paused {
-                Button("恢复") { model.startOrResume() }
-            }
-
-            Button {
-                isMinimized = false
-            } label: {
-                Label("展开", systemImage: "arrow.up.left.and.arrow.down.right")
-            }
-            .labelStyle(.iconOnly)
-            .help("展开批量识图进度")
-
-            Button {
-                isPresented = false
-            } label: {
-                Label("关闭", systemImage: "xmark")
-            }
-            .labelStyle(.iconOnly)
-            .help("隐藏批量识图面板，任务仍会继续")
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
