@@ -14,16 +14,12 @@ struct PhotoLibraryView: View {
     let album: PhotoAlbum
     let assets: [PHAsset]
     @State private var selectedIndex: Int?
-    @State private var isShowingBatchRecognition = false
-    @State private var isBatchRecognitionMinimized = false
-    @StateObject private var batchRecognitionModel: BatchRecognitionModel
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
 
     init(album: PhotoAlbum, assets: [PHAsset]) {
         self.album = album
         self.assets = assets
-        _batchRecognitionModel = StateObject(wrappedValue: BatchRecognitionModel(assets: assets))
     }
 
     private let columns = [
@@ -116,68 +112,6 @@ struct PhotoLibraryView: View {
                 searchResultIDs = result
             }
         }
-        .toolbar {
-            ToolbarItem(id: "batchRecognition") {
-                Button {
-                    if isShowingBatchRecognition {
-                        isBatchRecognitionMinimized = false
-                    } else {
-                        isShowingBatchRecognition = true
-                        isBatchRecognitionMinimized = false
-                    }
-                } label: {
-                    Label {
-                        Text("Ollama 批量识图")
-                    } icon: {
-                        AnimatedBatchIcon(isAnimating: batchRecognitionModel.phase == .running)
-                    }
-                }
-                .disabled(assets.isEmpty)
-                .help("识别当前相册中的全部照片")
-                .popover(isPresented: batchRecognitionPopoverBinding) {
-                    BatchRecognitionView(
-                        model: batchRecognitionModel,
-                        isPresented: $isShowingBatchRecognition
-                    )
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
-
-        }
-        .onChange(of: isShowingBatchRecognition) { _, isShowing in
-            if isShowing {
-                isBatchRecognitionMinimized = false
-                batchRecognitionModel.startOrResume()
-            }
-        }
-    }
-
-    private var batchRecognitionPopoverBinding: Binding<Bool> {
-        Binding(
-            get: { isShowingBatchRecognition && !isBatchRecognitionMinimized },
-            set: { isPresented in
-                if !isPresented {
-                    isBatchRecognitionMinimized = true
-                }
-            }
-        )
-    }
-}
-
-private struct AnimatedBatchIcon: View {
-    let isAnimating: Bool
-
-    var body: some View {
-        Image(systemName: "photo.stack")
-            .foregroundStyle(Color.accentColor)
-            .scaleEffect(isAnimating ? 1.14 : 1)
-            .animation(
-                isAnimating
-                    ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                    : .default,
-                value: isAnimating
-            )
-            .help(isAnimating ? "Ollama 正在后台识别照片" : "打开 Ollama 批量识图")
     }
 }
 
@@ -315,6 +249,16 @@ private struct PhotoViewerView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .overlay {
+                    TrackpadScrollView(
+                        onHorizontalScroll: { horizontalDelta in
+                            handleTrackpadScroll(horizontalDelta)
+                        },
+                        onMagnification: { magnification in
+                            zoomScale = min(max(zoomScale * (1 + magnification), 1), 5)
+                        }
+                    )
+                }
 
                 if isShowingInfo {
                     PhotoInfoSidebar(asset: currentAsset, metadata: metadata, ollamaText: ollamaText)
@@ -478,6 +422,14 @@ private struct PhotoViewerView: View {
     private func showNext() {
         guard currentIndex + 1 < assets.count else { return }
         currentIndex += 1
+    }
+
+    private func handleTrackpadScroll(_ horizontalDelta: CGFloat) {
+        if horizontalDelta > 0 {
+            showPrevious()
+        } else {
+            showNext()
+        }
     }
 
     private func copyCurrentImage() {
@@ -716,6 +668,55 @@ private struct VisionAnalysisResult: Identifiable {
         self.message = message
         self.faceCount = faceCount
         self.faceBoxes = faceBoxes
+    }
+}
+
+private struct TrackpadScrollView: NSViewRepresentable {
+    let onHorizontalScroll: (CGFloat) -> Void
+    let onMagnification: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ScrollCaptureView {
+        let view = ScrollCaptureView()
+        view.onHorizontalScroll = onHorizontalScroll
+        view.onMagnification = onMagnification
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollCaptureView, context: Context) {
+        nsView.onHorizontalScroll = onHorizontalScroll
+        nsView.onMagnification = onMagnification
+    }
+}
+
+private final class ScrollCaptureView: NSView {
+    var onHorizontalScroll: ((CGFloat) -> Void)?
+    var onMagnification: ((CGFloat) -> Void)?
+    private var accumulatedHorizontalDelta: CGFloat = 0
+    private var hasTriggeredCurrentGesture = false
+
+    override func scrollWheel(with event: NSEvent) {
+        guard event.hasPreciseScrollingDeltas else { return }
+
+        if event.phase == .began {
+            accumulatedHorizontalDelta = 0
+            hasTriggeredCurrentGesture = false
+        }
+
+        accumulatedHorizontalDelta += event.scrollingDeltaX
+        guard !hasTriggeredCurrentGesture, abs(accumulatedHorizontalDelta) >= 40 else {
+            if event.phase == .ended {
+                accumulatedHorizontalDelta = 0
+                hasTriggeredCurrentGesture = false
+            }
+            return
+        }
+
+        hasTriggeredCurrentGesture = true
+        onHorizontalScroll?(accumulatedHorizontalDelta)
+    }
+
+    override func magnify(with event: NSEvent) {
+        onMagnification?(event.magnification)
     }
 }
 

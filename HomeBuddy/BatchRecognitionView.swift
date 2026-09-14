@@ -5,6 +5,31 @@ import Photos
 import SwiftUI
 
 @MainActor
+final class BatchRecognitionModelStore: ObservableObject {
+    private var models: [String: BatchRecognitionModel] = [:]
+    private var phaseSubscriptions: [String: AnyCancellable] = [:]
+    @Published private(set) var activeModel: BatchRecognitionModel?
+
+    func model(for albumID: String, assets: [PHAsset]) -> BatchRecognitionModel {
+        if let model = models[albumID] {
+            return model
+        }
+
+        let model = BatchRecognitionModel(assets: assets)
+        models[albumID] = model
+        phaseSubscriptions[albumID] = model.$phase.sink { [weak self, weak model] phase in
+            guard let self, let model else { return }
+            if phase == .running || (phase == .paused && self.activeModel === model) {
+                self.activeModel = model
+            } else if phase == .finished && self.activeModel === model {
+                self.activeModel = nil
+            }
+        }
+        return model
+    }
+}
+
+@MainActor
 final class BatchRecognitionModel: ObservableObject {
     enum Phase {
         case ready
@@ -208,7 +233,7 @@ struct BatchRecognitionView: View {
                 if model.phase == .running {
                     Button("中断") { model.pause() }
                 }
-                Button("关闭") { isPresented = false }
+                Button("隐藏") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
             }
 

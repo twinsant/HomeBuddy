@@ -11,7 +11,10 @@ import Photos
 
 struct ContentView: View {
     @StateObject private var photoLibrary = PhotoLibraryStore()
+    @StateObject private var batchRecognitionModels = BatchRecognitionModelStore()
     @State private var selectedAlbumID: String?
+    @State private var isShowingBatchRecognition = false
+    @State private var batchRecognitionModel: BatchRecognitionModel?
 
     var body: some View {
         NavigationSplitView {
@@ -26,7 +29,10 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } detail: {
             if let selectedAlbum {
-                PhotoLibraryView(album: selectedAlbum, assets: photoLibrary.assets(for: selectedAlbum))
+                PhotoLibraryView(
+                    album: selectedAlbum,
+                    assets: photoLibrary.assets(for: selectedAlbum)
+                )
                     .id(selectedAlbum.id)
             } else {
                 ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
@@ -52,6 +58,34 @@ struct ContentView: View {
                 .help("重新读取系统照片图库")
             }
             .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
+                Button {
+                    showBatchRecognition()
+                } label: {
+                    Label {
+                        Text("Ollama 批量识图")
+                    } icon: {
+                        BatchRecognitionToolbarIcon(
+                            isAnimating: batchRecognitionModels.activeModel?.phase == .running
+                        )
+                    }
+                }
+                .disabled(selectedAlbum == nil && batchRecognitionModels.activeModel == nil)
+                .help("打开 Ollama 批量识图任务")
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .popover(isPresented: $isShowingBatchRecognition) {
+            if let batchRecognitionModel {
+                BatchRecognitionView(
+                    model: batchRecognitionModel,
+                    isPresented: $isShowingBatchRecognition
+                )
+            } else {
+                Text("没有可用的批量识图任务")
+                    .padding()
+            }
         }
         .task {
             photoLibrary.requestAccessAndLoad()
@@ -72,11 +106,47 @@ struct ContentView: View {
         return status == .authorized || status == .limited
     }
 
+    private func showBatchRecognition() {
+        let model: BatchRecognitionModel?
+        if let activeModel = batchRecognitionModels.activeModel {
+            model = activeModel
+        } else if let selectedAlbum {
+            model = batchRecognitionModels.model(
+                for: selectedAlbum.id,
+                assets: photoLibrary.assets(for: selectedAlbum)
+            )
+        } else {
+            model = nil
+        }
+
+        guard let model else { return }
+        batchRecognitionModel = model
+        model.startOrResume()
+        isShowingBatchRecognition = true
+    }
+
     private func openPhotoSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos") else {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct BatchRecognitionToolbarIcon: View {
+    let isAnimating: Bool
+
+    var body: some View {
+        Image(systemName: "photo.stack")
+            .foregroundStyle(isAnimating ? Color.blue : Color.primary)
+            .scaleEffect(isAnimating ? 1.14 : 1)
+            .opacity(isAnimating ? 0.68 : 1)
+            .animation(
+                isAnimating
+                    ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                    : .default,
+                value: isAnimating
+            )
     }
 }
 
