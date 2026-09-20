@@ -34,6 +34,39 @@ final class HomeBuddyUITests: XCTestCase {
     }
 
     @MainActor
+    func testReturnToAlbumAtEveryZoomLevel() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let thumbnail = app.buttons.matching(NSPredicate(format: "label == %@", "查看照片")).firstMatch
+        guard thumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要已授权且当前相册至少有一张照片的测试环境")
+        }
+
+        for steps in [0, 4, 16] {
+            thumbnail.click()
+            let back = app.buttons["backToPhotoLibrary"]
+            XCTAssertTrue(back.waitForExistence(timeout: 5))
+            let resetZoom = app.buttons["100%"]
+            XCTAssertTrue(resetZoom.waitForExistence(timeout: 5))
+            let imageLoaded = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "enabled == true"), object: resetZoom
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [imageLoaded], timeout: 30), .completed)
+
+            for _ in 0..<steps {
+                app.buttons["放大"].click()
+            }
+            XCTAssertTrue(app.buttons["\(100 + steps * 25)%"].waitForExistence(timeout: 5))
+
+            // 使用坐标点击，不能用 accessibility press 绕过图片的命中区域。
+            back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            XCTAssertTrue(back.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(thumbnail.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

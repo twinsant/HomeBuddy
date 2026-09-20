@@ -13,16 +13,43 @@ struct PhotoAlbum: Identifiable, Hashable {
     let id: String
     let title: String
     let isAllPhotos: Bool
+    let isFaceAlbum: Bool
 
     var icon: String {
-        isAllPhotos ? "photo.on.rectangle.angled" : "rectangle.stack"
+        if isFaceAlbum { return "person.2.crop.square.stack" }
+        return isAllPhotos ? "photo.on.rectangle.angled" : "rectangle.stack"
     }
 
     init(collection: PHAssetCollection) {
         id = collection.localIdentifier
         title = collection.localizedTitle ?? "未命名相册"
         isAllPhotos = collection.assetCollectionSubtype == .smartAlbumUserLibrary
+        isFaceAlbum = false
     }
+
+    static var faceAlbum: PhotoAlbum {
+        PhotoAlbum(
+            id: "virtual:faces",
+            title: "人物",
+            isAllPhotos: false,
+            isFaceAlbum: true
+        )
+    }
+
+    private init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool) {
+        self.id = id
+        self.title = title
+        self.isAllPhotos = isAllPhotos
+        self.isFaceAlbum = isFaceAlbum
+    }
+}
+
+struct FaceDetectionResult: Equatable {
+    let faceCount: Int
+    let faceBoxes: [CGRect]
+    let detectorVersion: String
+
+    nonisolated static let currentDetectorVersion = "vision-face-1"
 }
 
 @MainActor
@@ -54,6 +81,19 @@ final class PhotoLibraryStore: ObservableObject {
     }
 
     func assets(for album: PhotoAlbum) -> [PHAsset] {
+        if album.isFaceAlbum {
+            let assetIDs = PhotoMetadataCache.shared.faceAssetIDs()
+            guard !assetIDs.isEmpty else { return [] }
+
+            let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil)
+            let assetsByID = Dictionary(
+                uniqueKeysWithValues: fetchedAssets.objects(at: IndexSet(integersIn: 0..<fetchedAssets.count))
+                    .filter { $0.mediaType == .image }
+                    .map { ($0.localIdentifier, $0) }
+            )
+            return assetIDs.compactMap { assetsByID[$0] }
+        }
+
         guard let collection = PHAssetCollection.fetchAssetCollections(
             withLocalIdentifiers: [album.id],
             options: nil
@@ -89,7 +129,7 @@ final class PhotoLibraryStore: ObservableObject {
         }
 
         var seen = Set<String>()
-        albums = collections
+        let systemAlbums = collections
             .map(PhotoAlbum.init)
             .filter { seen.insert($0.id).inserted }
             .sorted { left, right in
@@ -98,6 +138,7 @@ final class PhotoLibraryStore: ObservableObject {
                 }
                 return left.title.localizedStandardCompare(right.title) == .orderedAscending
             }
+        albums = [PhotoAlbum.faceAlbum] + systemAlbums
     }
 }
 
@@ -259,6 +300,12 @@ final class PhotoMetadataCache {
         }
     }
 
+    /// Returns photo IDs with a cached positive face detection result.
+    /// The synchronous snapshot is protected by the cache's serial SQLite queue.
+    func faceAssetIDs() -> [String] {
+        queue.sync { readFaceAssetIDs() }
+    }
+
     func saveOllamaText(_ text: String, model: String, for asset: PHAsset) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
@@ -274,6 +321,52 @@ final class PhotoMetadataCache {
                 width: width,
                 height: height
             )
+        }
+    }
+
+    func faceDetectionResult(for asset: PHAsset, completion: @escaping (FaceDetectionResult?) -> Void) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            let result = self?.readFaceDetectionResult(
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height,
+                detectorVersion: FaceDetectionResult.currentDetectorVersion
+            )
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+    }
+
+    func saveFaceDetectionResult(
+        _ result: FaceDetectionResult,
+        for asset: PHAsset,
+        completion: (() -> Void)? = nil
+    ) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            self?.writeFaceDetectionResult(
+                result,
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height
+            )
+            if let completion {
+                DispatchQueue.main.async {
+                    completion()
+                }
+            }
         }
     }
 
@@ -350,6 +443,7 @@ final class PhotoMetadataCache {
     }
 
     private func createTable() {
+        sqlite3_exec(database, "PRAGMA foreign_keys = ON;", nil, nil, nil)
         let sql = """
         CREATE TABLE IF NOT EXISTS photo_metadata (
             asset_id TEXT PRIMARY KEY NOT NULL,
@@ -373,6 +467,33 @@ final class PhotoMetadataCache {
         );
         """
         sqlite3_exec(database, sql, nil, nil, nil)
+        let faceTablesSQL = """
+        CREATE TABLE IF NOT EXISTS face_detection_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id TEXT NOT NULL,
+            modification_time REAL NOT NULL,
+            pixel_width INTEGER NOT NULL,
+            pixel_height INTEGER NOT NULL,
+            detector_version TEXT NOT NULL,
+            face_count INTEGER NOT NULL,
+            detected_at REAL NOT NULL,
+            UNIQUE (asset_id, modification_time, pixel_width, pixel_height, detector_version)
+        );
+        CREATE TABLE IF NOT EXISTS detected_faces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            result_id INTEGER NOT NULL,
+            face_index INTEGER NOT NULL,
+            x REAL NOT NULL,
+            y REAL NOT NULL,
+            width REAL NOT NULL,
+            height REAL NOT NULL,
+            FOREIGN KEY (result_id) REFERENCES face_detection_results(id) ON DELETE CASCADE,
+            UNIQUE (result_id, face_index)
+        );
+        CREATE INDEX IF NOT EXISTS detected_faces_result_id_index
+            ON detected_faces(result_id);
+        """
+        sqlite3_exec(database, faceTablesSQL, nil, nil, nil)
         // 仅为在该字段加入前创建的缓存数据库执行迁移。
         if !columnExists("metadata_updated_at", in: "photo_metadata") {
             sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN metadata_updated_at REAL;", nil, nil, nil)
@@ -472,6 +593,123 @@ final class PhotoMetadataCache {
         return text(from: statement, at: 0)
     }
 
+    private func readFaceDetectionResult(
+        identifier: String,
+        modificationTime: Double,
+        width: Int,
+        height: Int,
+        detectorVersion: String
+    ) -> FaceDetectionResult? {
+        guard let database else { return nil }
+        let resultSQL = """
+        SELECT id, face_count FROM face_detection_results
+        WHERE asset_id = ? AND modification_time = ? AND pixel_width = ?
+          AND pixel_height = ? AND detector_version = ? LIMIT 1;
+        """
+        var resultStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, resultSQL, -1, &resultStatement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(resultStatement) }
+        bindText(identifier, to: resultStatement, at: 1)
+        sqlite3_bind_double(resultStatement, 2, modificationTime)
+        sqlite3_bind_int(resultStatement, 3, Int32(width))
+        sqlite3_bind_int(resultStatement, 4, Int32(height))
+        bindText(detectorVersion, to: resultStatement, at: 5)
+        guard sqlite3_step(resultStatement) == SQLITE_ROW else { return nil }
+
+        let resultID = sqlite3_column_int64(resultStatement, 0)
+        let faceCount = Int(sqlite3_column_int(resultStatement, 1))
+        let facesSQL = "SELECT x, y, width, height FROM detected_faces WHERE result_id = ? ORDER BY face_index;"
+        var facesStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, facesSQL, -1, &facesStatement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(facesStatement) }
+        sqlite3_bind_int64(facesStatement, 1, resultID)
+
+        var boxes: [CGRect] = []
+        while sqlite3_step(facesStatement) == SQLITE_ROW {
+            boxes.append(CGRect(
+                x: sqlite3_column_double(facesStatement, 0),
+                y: sqlite3_column_double(facesStatement, 1),
+                width: sqlite3_column_double(facesStatement, 2),
+                height: sqlite3_column_double(facesStatement, 3)
+            ))
+        }
+        return FaceDetectionResult(
+            faceCount: faceCount,
+            faceBoxes: boxes,
+            detectorVersion: detectorVersion
+        )
+    }
+
+    private func writeFaceDetectionResult(
+        _ result: FaceDetectionResult,
+        identifier: String,
+        modificationTime: Double,
+        width: Int,
+        height: Int
+    ) {
+        guard let database else { return }
+        sqlite3_exec(database, "BEGIN TRANSACTION;", nil, nil, nil)
+        var succeeded = false
+        defer {
+            sqlite3_exec(database, succeeded ? "COMMIT;" : "ROLLBACK;", nil, nil, nil)
+        }
+
+        let deleteSQL = """
+        DELETE FROM face_detection_results
+        WHERE asset_id = ? AND modification_time = ? AND pixel_width = ?
+          AND pixel_height = ? AND detector_version = ?;
+        """
+        var deleteStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, deleteSQL, -1, &deleteStatement, nil) == SQLITE_OK else { return }
+        bindText(identifier, to: deleteStatement, at: 1)
+        sqlite3_bind_double(deleteStatement, 2, modificationTime)
+        sqlite3_bind_int(deleteStatement, 3, Int32(width))
+        sqlite3_bind_int(deleteStatement, 4, Int32(height))
+        bindText(result.detectorVersion, to: deleteStatement, at: 5)
+        guard sqlite3_step(deleteStatement) == SQLITE_DONE else {
+            sqlite3_finalize(deleteStatement)
+            return
+        }
+        sqlite3_finalize(deleteStatement)
+
+        let insertSQL = """
+        INSERT INTO face_detection_results
+        (asset_id, modification_time, pixel_width, pixel_height, detector_version, face_count, detected_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """
+        var insertStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, insertSQL, -1, &insertStatement, nil) == SQLITE_OK else { return }
+        bindText(identifier, to: insertStatement, at: 1)
+        sqlite3_bind_double(insertStatement, 2, modificationTime)
+        sqlite3_bind_int(insertStatement, 3, Int32(width))
+        sqlite3_bind_int(insertStatement, 4, Int32(height))
+        bindText(result.detectorVersion, to: insertStatement, at: 5)
+        sqlite3_bind_int(insertStatement, 6, Int32(result.faceCount))
+        sqlite3_bind_double(insertStatement, 7, Date().timeIntervalSince1970)
+        guard sqlite3_step(insertStatement) == SQLITE_DONE else {
+            sqlite3_finalize(insertStatement)
+            return
+        }
+        sqlite3_finalize(insertStatement)
+
+        let resultID = sqlite3_last_insert_rowid(database)
+        let faceSQL = "INSERT INTO detected_faces (result_id, face_index, x, y, width, height) VALUES (?, ?, ?, ?, ?, ?);"
+        for (index, box) in result.faceBoxes.enumerated() {
+            var faceStatement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, faceSQL, -1, &faceStatement, nil) == SQLITE_OK else { return }
+            sqlite3_bind_int64(faceStatement, 1, resultID)
+            sqlite3_bind_int(faceStatement, 2, Int32(index))
+            sqlite3_bind_double(faceStatement, 3, Double(box.origin.x))
+            sqlite3_bind_double(faceStatement, 4, Double(box.origin.y))
+            sqlite3_bind_double(faceStatement, 5, Double(box.size.width))
+            sqlite3_bind_double(faceStatement, 6, Double(box.size.height))
+            let status = sqlite3_step(faceStatement)
+            sqlite3_finalize(faceStatement)
+            guard status == SQLITE_DONE else { return }
+        }
+        succeeded = true
+    }
+
     private func readAssetIDs(matchingOllamaKeywords keywords: [String]) -> Set<String> {
         guard let database, !keywords.isEmpty else { return [] }
 
@@ -497,6 +735,29 @@ final class PhotoMetadataCache {
             }
         }
         return identifiers
+    }
+
+    private func readFaceAssetIDs() -> [String] {
+        guard let database else { return [] }
+        let sql = """
+        SELECT asset_id
+        FROM face_detection_results
+        WHERE detector_version = ? AND face_count > 0
+        GROUP BY asset_id
+        ORDER BY MAX(detected_at) DESC;
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        bindText(FaceDetectionResult.currentDetectorVersion, to: statement, at: 1)
+
+        var assetIDs: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let assetID = text(from: statement, at: 0) {
+                assetIDs.append(assetID)
+            }
+        }
+        return assetIDs
     }
 
     private func writeOllamaText(_ text: String, model: String, identifier: String, modificationTime: Double, width: Int, height: Int) {

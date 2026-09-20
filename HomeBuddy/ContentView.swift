@@ -12,9 +12,12 @@ import Photos
 struct ContentView: View {
     @StateObject private var photoLibrary = PhotoLibraryStore()
     @StateObject private var batchRecognitionModels = BatchRecognitionModelStore()
+    @StateObject private var batchFaceRecognitionModels = BatchFaceRecognitionModelStore()
     @State private var selectedAlbumID: String?
     @State private var isShowingBatchRecognition = false
     @State private var batchRecognitionModel: BatchRecognitionModel?
+    @State private var isShowingBatchFaceRecognition = false
+    @State private var batchFaceRecognitionModel: BatchFaceRecognitionModel?
 
     var body: some View {
         NavigationSplitView {
@@ -75,6 +78,23 @@ struct ContentView: View {
                 .help("打开 Ollama 批量识图任务")
             }
             .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
+                Button {
+                    showBatchFaceRecognition()
+                } label: {
+                    Label {
+                        Text("批量人脸识别")
+                    } icon: {
+                        BatchFaceRecognitionToolbarIcon(
+                            isAnimating: batchFaceRecognitionModels.activeModel?.phase == .running
+                        )
+                    }
+                }
+                .disabled(selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
+                .help("打开批量人脸识别任务")
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         .popover(isPresented: $isShowingBatchRecognition) {
             if let batchRecognitionModel {
@@ -84,6 +104,17 @@ struct ContentView: View {
                 )
             } else {
                 Text("没有可用的批量识图任务")
+                    .padding()
+            }
+        }
+        .popover(isPresented: $isShowingBatchFaceRecognition) {
+            if let batchFaceRecognitionModel {
+                BatchFaceRecognitionView(
+                    model: batchFaceRecognitionModel,
+                    isPresented: $isShowingBatchFaceRecognition
+                )
+            } else {
+                Text("没有可用的批量人脸识别任务")
                     .padding()
             }
         }
@@ -125,6 +156,17 @@ struct ContentView: View {
         isShowingBatchRecognition = true
     }
 
+    private func showBatchFaceRecognition() {
+        guard let selectedAlbum else { return }
+        let model = batchFaceRecognitionModels.model(
+            for: selectedAlbum.id,
+            assets: photoLibrary.assets(for: selectedAlbum)
+        )
+        batchFaceRecognitionModel = model
+        model.startOrResume()
+        isShowingBatchFaceRecognition = true
+    }
+
     private func openPhotoSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos") else {
             return
@@ -138,6 +180,23 @@ private struct BatchRecognitionToolbarIcon: View {
 
     var body: some View {
         Image(systemName: "photo.stack")
+            .foregroundStyle(isAnimating ? Color.blue : Color.primary)
+            .scaleEffect(isAnimating ? 1.14 : 1)
+            .opacity(isAnimating ? 0.68 : 1)
+            .animation(
+                isAnimating
+                    ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                    : .default,
+                value: isAnimating
+            )
+    }
+}
+
+private struct BatchFaceRecognitionToolbarIcon: View {
+    let isAnimating: Bool
+
+    var body: some View {
+        Image(systemName: "person.2.crop.square.stack")
             .foregroundStyle(isAnimating ? Color.blue : Color.primary)
             .scaleEffect(isAnimating ? 1.14 : 1)
             .opacity(isAnimating ? 0.68 : 1)

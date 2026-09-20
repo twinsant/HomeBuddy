@@ -171,6 +171,8 @@ private struct PhotoViewerView: View {
     @State private var isOllamaAnalyzing = false
     @State private var zoomScale: CGFloat = 1
     @GestureState private var gestureScale: CGFloat = 1
+    @State private var imageOffset: CGSize = .zero
+    @State private var viewportSize: CGSize = .zero
 
     private var displayedZoomScale: CGFloat {
         min(max(zoomScale * gestureScale, 1), 5)
@@ -196,11 +198,12 @@ private struct PhotoViewerView: View {
         VStack(spacing: 0) {
             HStack {
                 Button {
-                    onBack()
+                    exitViewer()
                 } label: {
                     Label("返回相册", systemImage: "chevron.left")
                 }
                 .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("backToPhotoLibrary")
 
                 Text("照片 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)
@@ -222,6 +225,7 @@ private struct PhotoViewerView: View {
                             FaceBoundingBoxOverlay(imageSize: image.size, boxes: detectedFaceBoxes)
                         }
                         .scaleEffect(displayedZoomScale)
+                        .offset(boundedOffset(imageOffset))
                         .gesture(
                             MagnificationGesture()
                                 .updating($gestureScale) { value, state, _ in
@@ -248,14 +252,36 @@ private struct PhotoViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // clipped 只裁剪画面；交互区域也必须限制在未缩放的视口内。
+                .contentShape(.interaction, Rectangle())
                 .clipped()
+                .onGeometryChange(for: CGSize.self) { proxy in
+                    proxy.size
+                } action: { size in
+                    viewportSize = size
+                    imageOffset = boundedOffset(imageOffset)
+                }
+                .onChange(of: displayedZoomScale) { _, _ in
+                    imageOffset = boundedOffset(imageOffset)
+                }
                 .overlay {
                     TrackpadScrollView(
+                        isZoomed: displayedZoomScale > 1,
                         onHorizontalScroll: { horizontalDelta in
                             handleTrackpadScroll(horizontalDelta)
                         },
+                        onPan: { delta in
+                            guard displayedZoomScale > 1 else { return }
+                            imageOffset = boundedOffset(CGSize(
+                                width: imageOffset.width + delta.width,
+                                height: imageOffset.height + delta.height
+                            ))
+                        },
                         onMagnification: { magnification in
                             zoomScale = min(max(zoomScale * (1 + magnification), 1), 5)
+                        },
+                        onDoubleClick: { location in
+                            toggleDoubleClickZoom(at: location)
                         }
                     )
                 }
@@ -290,6 +316,7 @@ private struct PhotoViewerView: View {
             loadCurrentImage()
             loadMetadata()
             loadOllamaText()
+            loadFaceDetectionResult()
         }
         .toolbar {
             ToolbarItem {
@@ -392,6 +419,7 @@ private struct PhotoViewerView: View {
             ToolbarItem {
                 Button {
                     zoomScale = 1
+                    imageOffset = .zero
                 } label: {
                     Text("\(Int(displayedZoomScale * 100))%")
                         .monospacedDigit()
@@ -408,7 +436,7 @@ private struct PhotoViewerView: View {
             default: break
             }
         }
-        .onExitCommand(perform: onBack)
+        .onExitCommand(perform: exitViewer)
         .sheet(item: $analysisResult) { result in
             VisionAnalysisResultView(result: result)
         }
@@ -424,12 +452,57 @@ private struct PhotoViewerView: View {
         currentIndex += 1
     }
 
+    private func exitViewer() {
+        // 先清理查看器状态，避免在 500% 缩放或平移过程中退出时残留手势状态。
+        zoomScale = 1
+        imageOffset = .zero
+        onBack()
+    }
+
     private func handleTrackpadScroll(_ horizontalDelta: CGFloat) {
+        guard displayedZoomScale == 1 else { return }
         if horizontalDelta > 0 {
             showPrevious()
         } else {
             showNext()
         }
+    }
+
+    private func toggleDoubleClickZoom(at appKitLocation: CGPoint) {
+        if displayedZoomScale <= 1 {
+            let targetZoomScale: CGFloat = 5
+            let focusPoint = CGSize(
+                width: appKitLocation.x - viewportSize.width / 2,
+                // AppKit 原点在左下角，SwiftUI 的 offset 以左上角方向为正。
+                height: viewportSize.height / 2 - appKitLocation.y
+            )
+            let currentZoomScale = max(displayedZoomScale, 1)
+            let focusedOffset = CGSize(
+                width: focusPoint.width -
+                    (focusPoint.width - imageOffset.width) * targetZoomScale / currentZoomScale,
+                height: focusPoint.height -
+                    (focusPoint.height - imageOffset.height) * targetZoomScale / currentZoomScale
+            )
+            zoomScale = targetZoomScale
+            imageOffset = PhotoViewerGeometry.boundedOffset(
+                focusedOffset,
+                imageSize: image?.size ?? .zero,
+                viewportSize: viewportSize,
+                zoomScale: targetZoomScale
+            )
+        } else {
+            zoomScale = 1
+            imageOffset = .zero
+        }
+    }
+
+    private func boundedOffset(_ offset: CGSize) -> CGSize {
+        PhotoViewerGeometry.boundedOffset(
+            offset,
+            imageSize: image?.size ?? .zero,
+            viewportSize: viewportSize,
+            zoomScale: displayedZoomScale
+        )
     }
 
     private func copyCurrentImage() {
@@ -444,6 +517,7 @@ private struct PhotoViewerView: View {
         let assetID = asset.localIdentifier
         image = nil
         zoomScale = 1
+        imageOffset = .zero
         analysisResult = nil
         detectedFaceCount = nil
         detectedFaceBoxes = []
@@ -492,6 +566,20 @@ private struct PhotoViewerView: View {
         }
     }
 
+    private func loadFaceDetectionResult() {
+        let asset = currentAsset
+        let assetID = asset.localIdentifier
+        detectedFaceCount = nil
+        detectedFaceBoxes = []
+
+        PhotoMetadataCache.shared.faceDetectionResult(for: asset) { result in
+            guard currentAsset.localIdentifier == assetID else { return }
+            guard let result else { return }
+            detectedFaceCount = result.faceCount
+            detectedFaceBoxes = result.faceBoxes
+        }
+    }
+
     private func loadMetadataFromPhotos(asset: PHAsset, assetID: String) {
 
         let options = PHImageRequestOptions()
@@ -513,6 +601,8 @@ private struct PhotoViewerView: View {
     }
 
     private func analyzeCurrentImage(_ type: VisionAnalysisType) {
+        let asset = currentAsset
+        let assetID = asset.localIdentifier
         guard let image,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else {
@@ -532,10 +622,21 @@ private struct PhotoViewerView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.performAnalysis(type, on: cgImage)
             Task { @MainActor in
+                guard currentAsset.localIdentifier == assetID else { return }
                 isAnalyzing = false
                 detectedFaceCount = result.faceCount
                 detectedFaceBoxes = result.faceBoxes
                 analysisResult = type == .faces ? nil : result
+                if type == .faces, let faceCount = result.faceCount {
+                    PhotoMetadataCache.shared.saveFaceDetectionResult(
+                        FaceDetectionResult(
+                            faceCount: faceCount,
+                            faceBoxes: result.faceBoxes,
+                            detectorVersion: FaceDetectionResult.currentDetectorVersion
+                        ),
+                        for: asset
+                    )
+                }
             }
         }
     }
@@ -672,51 +773,125 @@ private struct VisionAnalysisResult: Identifiable {
 }
 
 private struct TrackpadScrollView: NSViewRepresentable {
+    let isZoomed: Bool
     let onHorizontalScroll: (CGFloat) -> Void
+    let onPan: (CGSize) -> Void
     let onMagnification: (CGFloat) -> Void
+    let onDoubleClick: (CGPoint) -> Void
 
     func makeNSView(context: Context) -> ScrollCaptureView {
         let view = ScrollCaptureView()
+        view.isZoomed = isZoomed
         view.onHorizontalScroll = onHorizontalScroll
+        view.onPan = onPan
         view.onMagnification = onMagnification
+        view.onDoubleClick = onDoubleClick
         return view
     }
 
     func updateNSView(_ nsView: ScrollCaptureView, context: Context) {
+        nsView.isZoomed = isZoomed
         nsView.onHorizontalScroll = onHorizontalScroll
+        nsView.onPan = onPan
         nsView.onMagnification = onMagnification
+        nsView.onDoubleClick = onDoubleClick
     }
 }
 
 private final class ScrollCaptureView: NSView {
+    var isZoomed = false
     var onHorizontalScroll: ((CGFloat) -> Void)?
+    var onPan: ((CGSize) -> Void)?
     var onMagnification: ((CGFloat) -> Void)?
-    private var accumulatedHorizontalDelta: CGFloat = 0
-    private var hasTriggeredCurrentGesture = false
+    var onDoubleClick: ((CGPoint) -> Void)?
+    private var scrollState = PhotoViewerScrollState()
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onDoubleClick?(convert(event.locationInWindow, from: nil))
+        }
+    }
 
     override func scrollWheel(with event: NSEvent) {
         guard event.hasPreciseScrollingDeltas else { return }
 
-        if event.phase == .began {
-            accumulatedHorizontalDelta = 0
-            hasTriggeredCurrentGesture = false
+        let action = scrollState.handle(
+            delta: CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY),
+            phase: event.phase,
+            momentumPhase: event.momentumPhase,
+            isZoomed: isZoomed
+        )
+        switch action {
+        case .navigate(let delta): onHorizontalScroll?(delta)
+        case .pan(let delta): onPan?(delta)
+        case .none: break
         }
-
-        accumulatedHorizontalDelta += event.scrollingDeltaX
-        guard !hasTriggeredCurrentGesture, abs(accumulatedHorizontalDelta) >= 40 else {
-            if event.phase == .ended {
-                accumulatedHorizontalDelta = 0
-                hasTriggeredCurrentGesture = false
-            }
-            return
-        }
-
-        hasTriggeredCurrentGesture = true
-        onHorizontalScroll?(accumulatedHorizontalDelta)
     }
 
     override func magnify(with event: NSEvent) {
         onMagnification?(event.magnification)
+    }
+}
+
+// 一次手势固定用途；切图忽略惯性，平移保留惯性。
+struct PhotoViewerScrollState {
+    enum Action: Equatable {
+        case none
+        case navigate(CGFloat)
+        case pan(CGSize)
+    }
+
+    private var startedZoomed: Bool?
+    private var accumulatedDelta: CGSize = .zero
+    private var hasTriggered = false
+
+    mutating func handle(
+        delta: CGSize, phase: NSEvent.Phase, momentumPhase: NSEvent.Phase,
+        isZoomed: Bool
+    ) -> Action {
+        if phase.contains(.cancelled) {
+            startedZoomed = nil
+            return .none
+        }
+        if !momentumPhase.isEmpty {
+            return startedZoomed == true && isZoomed ? .pan(delta) : .none
+        }
+        if phase.contains(.began) || startedZoomed == nil {
+            startedZoomed = isZoomed
+            accumulatedDelta = .zero
+            hasTriggered = false
+        }
+        guard startedZoomed == isZoomed else { return .none }
+        if isZoomed { return .pan(delta) }
+        // 结束事件不能解除切图锁，下一次 began 才能再次切图。
+        guard !phase.contains(.ended), !hasTriggered else { return .none }
+        accumulatedDelta.width += delta.width
+        accumulatedDelta.height += delta.height
+        guard abs(accumulatedDelta.width) >= 40,
+              abs(accumulatedDelta.width) > abs(accumulatedDelta.height)
+        else { return .none }
+        hasTriggered = true
+        return .navigate(accumulatedDelta.width)
+    }
+}
+
+enum PhotoViewerGeometry {
+    static func boundedOffset(
+        _ offset: CGSize, imageSize: CGSize, viewportSize: CGSize, zoomScale: CGFloat
+    ) -> CGSize {
+        guard zoomScale > 1, imageSize.width > 0, imageSize.height > 0,
+              viewportSize.width > 0, viewportSize.height > 0
+        else { return .zero }
+        let fitScale = min(
+            max(viewportSize.width - 48, 0) / imageSize.width,
+            max(viewportSize.height - 48, 0) / imageSize.height
+        )
+        let maxX = max((imageSize.width * fitScale * zoomScale - viewportSize.width) / 2, 0)
+        let maxY = max((imageSize.height * fitScale * zoomScale - viewportSize.height) / 2, 0)
+        return CGSize(
+            width: min(max(offset.width, -maxX), maxX),
+            height: min(max(offset.height, -maxY), maxY)
+        )
     }
 }
 

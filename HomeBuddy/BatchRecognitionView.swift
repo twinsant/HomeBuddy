@@ -3,6 +3,7 @@ import Combine
 import ImageIO
 import Photos
 import SwiftUI
+import Vision
 
 @MainActor
 final class BatchRecognitionModelStore: ObservableObject {
@@ -59,7 +60,9 @@ final class BatchRecognitionModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stop()
+            Task { @MainActor [weak self] in
+                self?.stop()
+            }
         }
     }
 
@@ -389,5 +392,243 @@ private extension TimeInterval {
         if minutes > 0 { parts.append("\(minutes) 分钟") }
         if seconds > 0 && parts.count < 2 { parts.append("\(seconds) 秒") }
         return "约 " + parts.joined(separator: " ")
+    }
+}
+
+@MainActor
+final class BatchFaceRecognitionModelStore: ObservableObject {
+    private var models: [String: BatchFaceRecognitionModel] = [:]
+    private var phaseSubscriptions: [String: AnyCancellable] = [:]
+    @Published private(set) var activeModel: BatchFaceRecognitionModel?
+
+    func model(for albumID: String, assets: [PHAsset]) -> BatchFaceRecognitionModel {
+        if let model = models[albumID] {
+            return model
+        }
+
+        let model = BatchFaceRecognitionModel(assets: assets)
+        models[albumID] = model
+        phaseSubscriptions[albumID] = model.$phase.sink { [weak self, weak model] phase in
+            guard let self, let model else { return }
+            if phase == .running || (phase == .paused && self.activeModel === model) {
+                self.activeModel = model
+            } else if phase == .finished && self.activeModel === model {
+                self.activeModel = nil
+            }
+        }
+        return model
+    }
+}
+
+@MainActor
+final class BatchFaceRecognitionModel: ObservableObject {
+    enum Phase {
+        case ready
+        case running
+        case paused
+        case finished
+    }
+
+    let assets: [PHAsset]
+    @Published private(set) var completed = 0
+    @Published private(set) var currentName = ""
+    @Published private(set) var phase: Phase = .ready
+    @Published private(set) var failures: [String] = []
+
+    private var task: Task<Void, Never>?
+    private var countedAssetIDs = Set<String>()
+
+    init(assets: [PHAsset]) {
+        self.assets = assets
+    }
+
+    deinit {
+        task?.cancel()
+    }
+
+    var progress: Double {
+        assets.isEmpty ? 1 : Double(completed) / Double(assets.count)
+    }
+
+    func startOrResume() {
+        guard phase != .running, completed < assets.count else { return }
+        phase = .running
+        task = Task { [weak self] in
+            await self?.run()
+        }
+    }
+
+    func pause() {
+        guard phase == .running else { return }
+        task?.cancel()
+        phase = .paused
+    }
+
+    private func run() async {
+        for asset in assets where !Task.isCancelled {
+            do {
+                // A non-nil result is a cache hit, including a valid zero-face result.
+                if await cachedResult(for: asset) != nil {
+                    markCompleted(asset)
+                    continue
+                }
+
+                currentName = asset.localIdentifier
+                let image = try await imageData(for: asset)
+                try Task.checkCancellation()
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try Self.detectFaces(in: image.data, orientation: image.orientation)
+                }.value
+                try Task.checkCancellation()
+                await save(result, for: asset)
+                markCompleted(asset)
+            } catch is CancellationError {
+                break
+            } catch {
+                failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
+            }
+        }
+
+        if Task.isCancelled {
+            phase = .paused
+        } else if completed >= assets.count {
+            phase = .finished
+            currentName = ""
+        } else {
+            phase = .paused
+        }
+    }
+
+    private func markCompleted(_ asset: PHAsset) {
+        guard countedAssetIDs.insert(asset.localIdentifier).inserted else { return }
+        completed += 1
+    }
+
+    private func cachedResult(for asset: PHAsset) async -> FaceDetectionResult? {
+        await withCheckedContinuation { continuation in
+            PhotoMetadataCache.shared.faceDetectionResult(for: asset) { result in
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    private func save(_ result: FaceDetectionResult, for asset: PHAsset) async {
+        await withCheckedContinuation { continuation in
+            PhotoMetadataCache.shared.saveFaceDetectionResult(result, for: asset) {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func imageData(for asset: PHAsset) async throws -> (data: Data, orientation: CGImagePropertyOrientation) {
+        try await withCheckedThrowingContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = true
+            options.version = .current
+
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) {
+                data, _, orientation, info in
+                if let error = info?[PHImageErrorKey] as? Error {
+                    continuation.resume(throwing: error)
+                } else if let data {
+                    continuation.resume(returning: (data, orientation))
+                } else {
+                    continuation.resume(throwing: FaceRecognitionError.imageUnavailable)
+                }
+            }
+        }
+    }
+
+    private nonisolated static func detectFaces(in data: Data, orientation: CGImagePropertyOrientation) throws -> FaceDetectionResult {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else {
+            throw FaceRecognitionError.imageUnavailable
+        }
+
+        let request = VNDetectFaceRectanglesRequest()
+        try VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:]).perform([request])
+        let boxes = (request.results ?? []).map(\.boundingBox)
+        return FaceDetectionResult(
+            faceCount: boxes.count,
+            faceBoxes: boxes,
+            detectorVersion: FaceDetectionResult.currentDetectorVersion
+        )
+    }
+
+    private enum FaceRecognitionError: LocalizedError {
+        case imageUnavailable
+
+        var errorDescription: String? {
+            "无法读取照片或执行人脸检测。"
+        }
+    }
+}
+
+struct BatchFaceRecognitionView: View {
+    @ObservedObject var model: BatchFaceRecognitionModel
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("批量人脸识别", systemImage: "person.2.crop.square.stack")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                if model.phase == .running {
+                    Button("中断") { model.pause() }
+                }
+                Button("隐藏") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            Text("已缓存的人脸检测结果会自动跳过，包括没有检测到人脸的照片。")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ProgressView(value: model.progress)
+            HStack {
+                Text("进度：\(model.completed) / \(model.assets.count)")
+                Spacer()
+                Text("剩余：\(max(model.assets.count - model.completed, 0)) 张")
+            }
+            .font(.headline)
+
+            if !model.currentName.isEmpty {
+                Text("当前处理：\(model.currentName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+
+            if !model.failures.isEmpty {
+                Text("失败 \(model.failures.count) 张（恢复时会重试）")
+                    .foregroundStyle(.orange)
+            }
+
+            HStack {
+                if model.phase == .finished {
+                    Label("全部处理完成", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if model.phase != .running {
+                    Button(model.phase == .ready ? "开始识别" : "恢复识别") {
+                        model.startOrResume()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Spacer()
+            }
+        }
+        .padding(18)
+        .frame(minWidth: 520, idealWidth: 560)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary) }
+        .onAppear {
+            if model.phase == .ready { model.startOrResume() }
+        }
     }
 }
