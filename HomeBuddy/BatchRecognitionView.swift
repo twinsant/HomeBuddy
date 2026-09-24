@@ -466,14 +466,15 @@ final class BatchFaceRecognitionModel: ObservableObject {
 
     private func run() async {
         for asset in assets where !Task.isCancelled {
+            currentName = asset.localIdentifier
             do {
-                // A non-nil result is a cache hit, including a valid zero-face result.
-                if await cachedResult(for: asset) != nil {
+                // Detection cache hits still need an embedding backfill for assigned faces.
+                if let cached = await cachedResult(for: asset) {
+                    try await indexMissingEmbeddings(in: cached, for: asset)
                     markCompleted(asset)
                     continue
                 }
 
-                currentName = asset.localIdentifier
                 let image = try await imageData(for: asset)
                 try Task.checkCancellation()
                 let result = try await Task.detached(priority: .userInitiated) {
@@ -481,6 +482,10 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 }.value
                 try Task.checkCancellation()
                 await save(result, for: asset)
+                guard let savedResult = await cachedResult(for: asset) else {
+                    throw FaceRecognitionError.cacheUnavailable
+                }
+                try await indexMissingEmbeddings(in: savedResult, for: asset, photo: image)
                 markCompleted(asset)
             } catch is CancellationError {
                 break
@@ -520,6 +525,117 @@ final class BatchFaceRecognitionModel: ObservableObject {
         }
     }
 
+    private func indexMissingEmbeddings(
+        in result: FaceDetectionResult,
+        for asset: PHAsset,
+        photo suppliedPhoto: (data: Data, orientation: CGImagePropertyOrientation)? = nil
+    ) async throws {
+        let confirmedFaces = result.faces.enumerated().compactMap { index, face -> (Int, String)? in
+            guard let personID = face.personID else { return nil }
+            return (index, personID)
+        }
+        guard !confirmedFaces.isEmpty else { return }
+
+        guard FaceRecognitionConfiguration.modelURL() != nil else {
+            throw FaceRecognitionError.modelNotConfigured
+        }
+
+        let configuration = ChromaConfiguration.current
+        let collectionID = try await ChromaService.shared.createCollectionIfNeeded(configuration: configuration)
+        let personRecords = await people()
+        let nameByID = Dictionary(uniqueKeysWithValues: personRecords.map { ($0.id, $0.displayName) })
+        let photo: (data: Data, orientation: CGImagePropertyOrientation)
+        if let suppliedPhoto {
+            photo = suppliedPhoto
+        } else {
+            photo = try await imageData(for: asset)
+        }
+        try Task.checkCancellation()
+        guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
+              let uprightImage = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 2400
+                ] as CFDictionary
+              )
+        else { throw FaceRecognitionError.imageUnavailable }
+
+        let embeddings = try await FaceRecognitionService.shared.recognize(image: uprightImage)
+        try Task.checkCancellation()
+
+        var usedEmbeddingIndices = Set<Int>()
+        var records: [(id: String, vector: [Double], metadata: [String: String])] = []
+        for (faceIndex, personID) in confirmedFaces {
+            guard let displayName = nameByID[personID],
+                  result.faces.indices.contains(faceIndex)
+            else { continue }
+            let storedFace = result.faces[faceIndex]
+
+            let match = embeddings.indices
+                .filter { !usedEmbeddingIndices.contains($0) }
+                .map { ($0, Self.intersectionOverUnion(storedFace.box, embeddings[$0].box)) }
+                .max(by: { $0.1 < $1.1 })
+            guard let (embeddingIndex, overlap) = match, overlap >= 0.25 else { continue }
+            usedEmbeddingIndices.insert(embeddingIndex)
+            let vector = embeddings[embeddingIndex].vector
+            guard vector.count == 512, vector.allSatisfy(\.isFinite) else {
+                throw FaceRecognitionError.invalidEmbedding
+            }
+            records.append((
+                "\(asset.localIdentifier)#\(embeddingIndex)",
+                vector,
+                [
+                    "asset_id": asset.localIdentifier,
+                    "person_id": personID,
+                    "display_name": displayName,
+                    "model_id": FaceRecognitionService.modelIdentifier
+                ]
+            ))
+        }
+
+        guard !records.isEmpty else { return }
+        let existing = try await ChromaService.shared.get(
+            ids: records.map(\.id),
+            collectionID: collectionID,
+            configuration: configuration
+        )
+        let validExistingIDs = Set(existing.ids.enumerated().compactMap { index, id -> String? in
+            guard index < existing.metadatas.count,
+                  existing.metadatas[index]?["model_id"] == FaceRecognitionService.modelIdentifier,
+                  existing.metadatas[index]?["person_id"] == records.first(where: { $0.id == id })?.metadata["person_id"]
+            else { return nil }
+            return id
+        })
+        let missingRecords = records.filter { !validExistingIDs.contains($0.id) }
+        guard !missingRecords.isEmpty else { return }
+        try await ChromaService.shared.upsert(
+            ids: missingRecords.map(\.id),
+            embeddings: missingRecords.map(\.vector),
+            metadatas: missingRecords.map(\.metadata),
+            collectionID: collectionID,
+            configuration: configuration
+        )
+    }
+
+    private func people() async -> [Person] {
+        await withCheckedContinuation { continuation in
+            PhotoMetadataCache.shared.people { records in
+                continuation.resume(returning: records)
+            }
+        }
+    }
+
+    private nonisolated static func intersectionOverUnion(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else { return 0 }
+        let intersectionArea = intersection.width * intersection.height
+        let unionArea = lhs.width * lhs.height + rhs.width * rhs.height - intersectionArea
+        return unionArea > 0 ? intersectionArea / unionArea : 0
+    }
+
     private func imageData(for asset: PHAsset) async throws -> (data: Data, orientation: CGImagePropertyOrientation) {
         try await withCheckedThrowingContinuation { continuation in
             let options = PHImageRequestOptions()
@@ -554,15 +670,27 @@ final class BatchFaceRecognitionModel: ObservableObject {
         return FaceDetectionResult(
             faceCount: boxes.count,
             faceBoxes: boxes,
-            detectorVersion: FaceDetectionResult.currentDetectorVersion
+            detectorVersion: FaceDetectionResult.legacyDetectorVersion
         )
     }
 
     private enum FaceRecognitionError: LocalizedError {
         case imageUnavailable
+        case cacheUnavailable
+        case modelNotConfigured
+        case invalidEmbedding
 
         var errorDescription: String? {
-            "无法读取照片或执行人脸检测。"
+            switch self {
+            case .imageUnavailable:
+                "无法读取照片或执行人脸检测。"
+            case .cacheUnavailable:
+                "人脸检测结果未能写入 SQLite。"
+            case .modelNotConfigured:
+                "检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。"
+            case .invalidEmbedding:
+                "人脸模型返回了无效的 512 维 embedding。"
+            }
         }
     }
 }
@@ -584,7 +712,7 @@ struct BatchFaceRecognitionView: View {
                     .keyboardShortcut(.cancelAction)
             }
 
-            Text("已缓存的人脸检测结果会自动跳过，包括没有检测到人脸的照片。")
+            Text("已有检测结果仍会检查已标注人脸的 Chroma embedding；缺失时使用本地 GGUF 模型生成并保存。未标注人脸只检测方框。")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

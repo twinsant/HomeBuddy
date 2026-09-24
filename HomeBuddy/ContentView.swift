@@ -123,7 +123,7 @@ struct ContentView: View {
         }
         .onChange(of: photoLibrary.albums) { _, albums in
             if selectedAlbumID == nil || !albums.contains(where: { $0.id == selectedAlbumID }) {
-                selectedAlbumID = albums.first?.id
+                selectedAlbumID = albums.first(where: \.isRecents)?.id ?? albums.first?.id
             }
         }
     }

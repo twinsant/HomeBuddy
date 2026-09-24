@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @State private var storageDirectory: URL?
@@ -17,6 +18,14 @@ struct SettingsView: View {
     @State private var ollamaModel = OllamaConfiguration.defaultModel
     @State private var ollamaModels: [String] = []
     @State private var isLoadingOllamaModels = false
+    @State private var chromaBaseURL = ChromaConfiguration.defaultBaseURL
+    @State private var chromaTenant = ChromaConfiguration.defaultTenant
+    @State private var chromaDatabase = ChromaConfiguration.defaultDatabase
+    @State private var chromaCollection = ChromaConfiguration.defaultCollection
+    @State private var isTestingChroma = false
+    @State private var chromaStatusMessage = ""
+    @State private var faceModelPath = FaceRecognitionConfiguration.modelPath
+    @State private var faceModelStatusMessage = ""
 
     var body: some View {
         Form {
@@ -92,15 +101,81 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
             }
+
+            Section("本地人脸识别") {
+                LabeledContent("GGUF 模型") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(faceModelPath ?? "未配置")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                        HStack {
+                            Button("选择模型…", action: chooseFaceModel)
+                            if faceModelPath != nil {
+                                Button("移除", role: .destructive, action: clearFaceModel)
+                            }
+                        }
+                    }
+                }
+                Text("选择 face-detect.cpp 兼容的 antelopev2.gguf。模型通过安全书签访问；该预训练权重仅限非商业用途。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !faceModelStatusMessage.isEmpty {
+                    Text(faceModelStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Chroma 向量数据库") {
+                TextField("服务地址", text: $chromaBaseURL)
+                TextField("Tenant", text: $chromaTenant)
+                TextField("Database", text: $chromaDatabase)
+                TextField("Collection", text: $chromaCollection)
+
+                HStack {
+                    Text("本机 Chroma HTTP 服务用于保存已确认人物的人脸 embedding，并查询待确认的候选人物。")
+                    Spacer()
+                    Button {
+                        testChromaConnection()
+                    } label: {
+                        if isTestingChroma {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("测试连接", systemImage: "bolt.horizontal")
+                        }
+                    }
+                    .disabled(isTestingChroma)
+                    Button("保存") {
+                        saveChromaConfiguration()
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if !chromaStatusMessage.isEmpty {
+                    Text(chromaStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(chromaStatusMessage == "Chroma v2 连接成功。" ? .green : .red)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 560, height: 330)
+        .frame(width: 600, height: 620)
         .onAppear {
             storageDirectory = PhotoMetadataCache.shared.storageDirectoryURL
             let configuration = OllamaConfiguration.current
             ollamaBaseURL = configuration.baseURL
             ollamaModel = configuration.model
+            let chromaConfiguration = ChromaConfiguration.current
+            chromaBaseURL = chromaConfiguration.baseURL
+            chromaTenant = chromaConfiguration.tenant
+            chromaDatabase = chromaConfiguration.database
+            chromaCollection = chromaConfiguration.collection
+            faceModelPath = FaceRecognitionConfiguration.modelPath
             refreshOllamaModels()
         }
         .alert("目标目录已有数据库", isPresented: $isConfirmingOverwrite) {
@@ -153,6 +228,60 @@ struct SettingsView: View {
                 statusMessage = error.localizedDescription
             }
             isLoadingOllamaModels = false
+        }
+    }
+
+    private func saveChromaConfiguration() {
+        ChromaConfiguration(
+            baseURL: chromaBaseURL,
+            tenant: chromaTenant,
+            database: chromaDatabase,
+            collection: chromaCollection
+        ).save()
+        chromaStatusMessage = "Chroma 配置已保存。"
+    }
+
+    private func chooseFaceModel() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 face-detect GGUF 模型"
+        panel.prompt = "选择"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try FaceRecognitionConfiguration.saveModelURL(url)
+            faceModelPath = url.path
+            faceModelStatusMessage = "模型路径已保存。打开大图后可执行人脸识别。"
+        } catch {
+            faceModelStatusMessage = "无法保存模型访问权限：\(error.localizedDescription)"
+        }
+    }
+
+    private func clearFaceModel() {
+        FaceRecognitionConfiguration.clearModelURL()
+        faceModelPath = nil
+        faceModelStatusMessage = "模型配置已移除。"
+    }
+
+    private func testChromaConnection() {
+        let configuration = ChromaConfiguration(
+            baseURL: chromaBaseURL,
+            tenant: chromaTenant,
+            database: chromaDatabase,
+            collection: chromaCollection
+        )
+        isTestingChroma = true
+
+        Task {
+            do {
+                try await ChromaService.shared.checkConnection(configuration: configuration)
+                chromaStatusMessage = "Chroma v2 连接成功。"
+            } catch {
+                chromaStatusMessage = error.localizedDescription
+            }
+            isTestingChroma = false
         }
     }
 

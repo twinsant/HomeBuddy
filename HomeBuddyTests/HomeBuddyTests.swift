@@ -101,4 +101,42 @@ struct HomeBuddyTests {
                     viewportSize: viewport, zoomScale: 2) == .zero)
     }
 
+    @Test func chromaConfigurationNormalizesValues() {
+        let configuration = ChromaConfiguration(
+            baseURL: "  http://127.0.0.1:8000/// ",
+            tenant: " ",
+            database: "photos",
+            collection: " "
+        )
+
+        #expect(configuration.normalizedBaseURL == "http://127.0.0.1:8000")
+        #expect(configuration.normalizedTenant == ChromaConfiguration.defaultTenant)
+        #expect(configuration.normalizedDatabase == "photos")
+        #expect(configuration.normalizedCollection == ChromaConfiguration.defaultCollection)
+    }
+
+    @Test func chromaConfigurationRejectsInvalidUpsertCounts() async {
+        let service = ChromaService()
+        let configuration = ChromaConfiguration(
+            baseURL: "http://127.0.0.1:8000",
+            tenant: "tenant",
+            database: "database",
+            collection: "faces"
+        )
+
+        do {
+            try await service.upsert(
+                ids: ["one"],
+                embeddings: [],
+                collectionID: "collection-id",
+                configuration: configuration
+            )
+            #expect(Bool(false), "不匹配的 ids/embeddings 应该在发起网络请求前失败")
+        } catch let error as ChromaService.ServiceError {
+            #expect(error == .invalidConfiguration("ids 与 embeddings 数量必须一致且不能为空。"))
+        } catch {
+            #expect(Bool(false), "应返回 ChromaService.ServiceError")
+        }
+    }
+
 }

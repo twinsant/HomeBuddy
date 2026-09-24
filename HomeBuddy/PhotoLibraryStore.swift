@@ -14,6 +14,7 @@ struct PhotoAlbum: Identifiable, Hashable {
     let title: String
     let isAllPhotos: Bool
     let isFaceAlbum: Bool
+    let isRecents: Bool
 
     var icon: String {
         if isFaceAlbum { return "person.2.crop.square.stack" }
@@ -25,6 +26,7 @@ struct PhotoAlbum: Identifiable, Hashable {
         title = collection.localizedTitle ?? "未命名相册"
         isAllPhotos = collection.assetCollectionSubtype == .smartAlbumUserLibrary
         isFaceAlbum = false
+        isRecents = collection.assetCollectionSubtype == .smartAlbumRecentlyAdded
     }
 
     static var faceAlbum: PhotoAlbum {
@@ -32,24 +34,54 @@ struct PhotoAlbum: Identifiable, Hashable {
             id: "virtual:faces",
             title: "人物",
             isAllPhotos: false,
-            isFaceAlbum: true
+            isFaceAlbum: true,
+            isRecents: false
         )
     }
 
-    private init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool) {
+    private init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool, isRecents: Bool) {
         self.id = id
         self.title = title
         self.isAllPhotos = isAllPhotos
         self.isFaceAlbum = isFaceAlbum
+        self.isRecents = isRecents
     }
+}
+
+struct Person: Identifiable, Equatable {
+    let id: String
+    let displayName: String
+}
+
+struct DetectedFace: Equatable {
+    let box: CGRect
+    let personID: String?
+    var candidate: FacePersonCandidate? = nil
 }
 
 struct FaceDetectionResult: Equatable {
     let faceCount: Int
-    let faceBoxes: [CGRect]
+    let faces: [DetectedFace]
     let detectorVersion: String
 
-    nonisolated static let currentDetectorVersion = "vision-face-1"
+    var faceBoxes: [CGRect] { faces.map(\.box) }
+
+    nonisolated init(faceCount: Int, faces: [DetectedFace], detectorVersion: String) {
+        self.faceCount = faceCount
+        self.faces = faces
+        self.detectorVersion = detectorVersion
+    }
+
+    nonisolated init(faceCount: Int, faceBoxes: [CGRect], detectorVersion: String) {
+        self.init(
+            faceCount: faceCount,
+            faces: faceBoxes.map { DetectedFace(box: $0, personID: nil) },
+            detectorVersion: detectorVersion
+        )
+    }
+
+    nonisolated static let currentDetectorVersion = "facedetect-antelopev2-1"
+    nonisolated static let legacyDetectorVersion = "vision-face-1"
 }
 
 @MainActor
@@ -370,6 +402,60 @@ final class PhotoMetadataCache {
         }
     }
 
+    func people(completion: @escaping ([Person]) -> Void) {
+        queue.async { [weak self] in
+            let people = self?.readPeople() ?? []
+            DispatchQueue.main.async { completion(people) }
+        }
+    }
+
+    func savePerson(named displayName: String, completion: @escaping (Person?) -> Void) {
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+        let person = Person(id: UUID().uuidString, displayName: name)
+        queue.async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let normalizedName = Self.normalizedPersonName(name)
+            let existingPerson = self.readPeople().first {
+                Self.normalizedPersonName($0.displayName) == normalizedName
+            }
+            let savedPerson = existingPerson ?? (self.writePerson(person) ? person : nil)
+            DispatchQueue.main.async { completion(savedPerson) }
+        }
+    }
+
+    func saveFacePersonID(
+        _ personID: String?,
+        faceIndex: Int,
+        for asset: PHAsset,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+        queue.async { [weak self] in
+            let succeeded = self?.writeFacePersonID(
+                personID,
+                faceIndex: faceIndex,
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height,
+                detectorVersion: FaceDetectionResult.currentDetectorVersion
+            ) ?? false
+            if let completion {
+                DispatchQueue.main.async { completion(succeeded) }
+            }
+        }
+    }
+
     private var databaseURLValue: URL?
 
     private func openDatabase() {
@@ -487,6 +573,7 @@ final class PhotoMetadataCache {
             y REAL NOT NULL,
             width REAL NOT NULL,
             height REAL NOT NULL,
+            person_id TEXT,
             FOREIGN KEY (result_id) REFERENCES face_detection_results(id) ON DELETE CASCADE,
             UNIQUE (result_id, face_index)
         );
@@ -494,6 +581,7 @@ final class PhotoMetadataCache {
             ON detected_faces(result_id);
         """
         sqlite3_exec(database, faceTablesSQL, nil, nil, nil)
+        sqlite3_exec(database, "CREATE TABLE IF NOT EXISTS people (person_id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);", nil, nil, nil)
         // 仅为在该字段加入前创建的缓存数据库执行迁移。
         if !columnExists("metadata_updated_at", in: "photo_metadata") {
             sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN metadata_updated_at REAL;", nil, nil, nil)
@@ -506,6 +594,9 @@ final class PhotoMetadataCache {
         }
         if !columnExists("ollama_updated_at", in: "photo_metadata") {
             sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_updated_at REAL;", nil, nil, nil)
+        }
+        if !columnExists("person_id", in: "detected_faces") {
+            sqlite3_exec(database, "ALTER TABLE detected_faces ADD COLUMN person_id TEXT;", nil, nil, nil)
         }
     }
 
@@ -602,9 +693,10 @@ final class PhotoMetadataCache {
     ) -> FaceDetectionResult? {
         guard let database else { return nil }
         let resultSQL = """
-        SELECT id, face_count FROM face_detection_results
+        SELECT id, face_count, detector_version FROM face_detection_results
         WHERE asset_id = ? AND modification_time = ? AND pixel_width = ?
-          AND pixel_height = ? AND detector_version = ? LIMIT 1;
+          AND pixel_height = ? AND detector_version IN (?, ?)
+        ORDER BY CASE detector_version WHEN ? THEN 0 ELSE 1 END LIMIT 1;
         """
         var resultStatement: OpaquePointer?
         guard sqlite3_prepare_v2(database, resultSQL, -1, &resultStatement, nil) == SQLITE_OK else { return nil }
@@ -614,30 +706,116 @@ final class PhotoMetadataCache {
         sqlite3_bind_int(resultStatement, 3, Int32(width))
         sqlite3_bind_int(resultStatement, 4, Int32(height))
         bindText(detectorVersion, to: resultStatement, at: 5)
+        bindText(FaceDetectionResult.legacyDetectorVersion, to: resultStatement, at: 6)
+        bindText(detectorVersion, to: resultStatement, at: 7)
         guard sqlite3_step(resultStatement) == SQLITE_ROW else { return nil }
 
         let resultID = sqlite3_column_int64(resultStatement, 0)
         let faceCount = Int(sqlite3_column_int(resultStatement, 1))
-        let facesSQL = "SELECT x, y, width, height FROM detected_faces WHERE result_id = ? ORDER BY face_index;"
+        let facesSQL = "SELECT x, y, width, height, person_id FROM detected_faces WHERE result_id = ? ORDER BY face_index;"
         var facesStatement: OpaquePointer?
         guard sqlite3_prepare_v2(database, facesSQL, -1, &facesStatement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(facesStatement) }
         sqlite3_bind_int64(facesStatement, 1, resultID)
 
-        var boxes: [CGRect] = []
+        var faces: [DetectedFace] = []
         while sqlite3_step(facesStatement) == SQLITE_ROW {
-            boxes.append(CGRect(
-                x: sqlite3_column_double(facesStatement, 0),
-                y: sqlite3_column_double(facesStatement, 1),
-                width: sqlite3_column_double(facesStatement, 2),
-                height: sqlite3_column_double(facesStatement, 3)
+            faces.append(DetectedFace(
+                box: CGRect(
+                    x: sqlite3_column_double(facesStatement, 0),
+                    y: sqlite3_column_double(facesStatement, 1),
+                    width: sqlite3_column_double(facesStatement, 2),
+                    height: sqlite3_column_double(facesStatement, 3)
+                ),
+                personID: text(from: facesStatement, at: 4)
             ))
         }
         return FaceDetectionResult(
             faceCount: faceCount,
-            faceBoxes: boxes,
-            detectorVersion: detectorVersion
+            faces: faces,
+            detectorVersion: text(from: resultStatement, at: 2) ?? detectorVersion
         )
+    }
+
+    private func readPeople() -> [Person] {
+        guard let database else { return [] }
+        let sql = "SELECT person_id, display_name FROM people ORDER BY display_name COLLATE NOCASE;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        var result: [Person] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(from: statement, at: 0), let name = text(from: statement, at: 1) else { continue }
+            result.append(Person(id: id, displayName: name))
+        }
+        return result
+    }
+
+    private static func normalizedPersonName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func writePerson(_ person: Person) -> Bool {
+        guard let database else { return false }
+        let sql = "INSERT INTO people (person_id, display_name, created_at, updated_at) VALUES (?, ?, ?, ?);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        bindText(person.id, to: statement, at: 1)
+        bindText(person.displayName, to: statement, at: 2)
+        let now = Date().timeIntervalSince1970
+        sqlite3_bind_double(statement, 3, now)
+        sqlite3_bind_double(statement, 4, now)
+        return sqlite3_step(statement) == SQLITE_DONE
+    }
+
+    private func writeFacePersonID(
+        _ personID: String?,
+        faceIndex: Int,
+        identifier: String,
+        modificationTime: Double,
+        width: Int,
+        height: Int,
+        detectorVersion: String
+    ) -> Bool {
+        guard let database else { return false }
+        let resultSQL = """
+        SELECT id FROM face_detection_results
+        WHERE asset_id = ? AND modification_time = ? AND pixel_width = ?
+          AND pixel_height = ? AND detector_version IN (?, ?)
+        ORDER BY CASE detector_version WHEN ? THEN 0 ELSE 1 END LIMIT 1;
+        """
+        var resultStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, resultSQL, -1, &resultStatement, nil) == SQLITE_OK else { return false }
+        bindText(identifier, to: resultStatement, at: 1)
+        sqlite3_bind_double(resultStatement, 2, modificationTime)
+        sqlite3_bind_int(resultStatement, 3, Int32(width))
+        sqlite3_bind_int(resultStatement, 4, Int32(height))
+        bindText(detectorVersion, to: resultStatement, at: 5)
+        bindText(FaceDetectionResult.legacyDetectorVersion, to: resultStatement, at: 6)
+        bindText(detectorVersion, to: resultStatement, at: 7)
+        guard sqlite3_step(resultStatement) == SQLITE_ROW else {
+            sqlite3_finalize(resultStatement)
+            return false
+        }
+        let resultID = sqlite3_column_int64(resultStatement, 0)
+        sqlite3_finalize(resultStatement)
+
+        let updateSQL = "UPDATE detected_faces SET person_id = ? WHERE result_id = ? AND face_index = ?;"
+        var updateStatement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, updateSQL, -1, &updateStatement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(updateStatement) }
+        if let personID {
+            bindText(personID, to: updateStatement, at: 1)
+        } else {
+            sqlite3_bind_null(updateStatement, 1)
+        }
+        sqlite3_bind_int64(updateStatement, 2, resultID)
+        sqlite3_bind_int(updateStatement, 3, Int32(faceIndex))
+        guard sqlite3_step(updateStatement) == SQLITE_DONE else { return false }
+        return sqlite3_changes(database) > 0
     }
 
     private func writeFaceDetectionResult(
@@ -648,6 +826,36 @@ final class PhotoMetadataCache {
         height: Int
     ) {
         guard let database else { return }
+        var existingFaces: [(box: CGRect, personID: String)] = []
+        let existingSQL = """
+        SELECT f.face_index, f.person_id, f.x, f.y, f.width, f.height
+        FROM detected_faces f
+        JOIN face_detection_results r ON r.id = f.result_id
+        WHERE r.asset_id = ? AND r.modification_time = ? AND r.pixel_width = ?
+          AND r.pixel_height = ? AND f.person_id IS NOT NULL;
+        """
+        var existingStatement: OpaquePointer?
+        if sqlite3_prepare_v2(database, existingSQL, -1, &existingStatement, nil) == SQLITE_OK {
+            bindText(identifier, to: existingStatement, at: 1)
+            sqlite3_bind_double(existingStatement, 2, modificationTime)
+            sqlite3_bind_int(existingStatement, 3, Int32(width))
+            sqlite3_bind_int(existingStatement, 4, Int32(height))
+            // Preserve annotations across detector upgrades by matching face geometry,
+            // rather than carrying a person ID over by array index.
+            while sqlite3_step(existingStatement) == SQLITE_ROW {
+                guard let personID = text(from: existingStatement, at: 1) else { continue }
+                existingFaces.append((
+                    CGRect(
+                        x: sqlite3_column_double(existingStatement, 2),
+                        y: sqlite3_column_double(existingStatement, 3),
+                        width: sqlite3_column_double(existingStatement, 4),
+                        height: sqlite3_column_double(existingStatement, 5)
+                    ),
+                    personID
+                ))
+            }
+            sqlite3_finalize(existingStatement)
+        }
         sqlite3_exec(database, "BEGIN TRANSACTION;", nil, nil, nil)
         var succeeded = false
         defer {
@@ -693,21 +901,38 @@ final class PhotoMetadataCache {
         sqlite3_finalize(insertStatement)
 
         let resultID = sqlite3_last_insert_rowid(database)
-        let faceSQL = "INSERT INTO detected_faces (result_id, face_index, x, y, width, height) VALUES (?, ?, ?, ?, ?, ?);"
-        for (index, box) in result.faceBoxes.enumerated() {
+        let faceSQL = "INSERT INTO detected_faces (result_id, face_index, x, y, width, height, person_id) VALUES (?, ?, ?, ?, ?, ?, ?);"
+        for (index, face) in result.faces.enumerated() {
             var faceStatement: OpaquePointer?
             guard sqlite3_prepare_v2(database, faceSQL, -1, &faceStatement, nil) == SQLITE_OK else { return }
             sqlite3_bind_int64(faceStatement, 1, resultID)
             sqlite3_bind_int(faceStatement, 2, Int32(index))
-            sqlite3_bind_double(faceStatement, 3, Double(box.origin.x))
-            sqlite3_bind_double(faceStatement, 4, Double(box.origin.y))
-            sqlite3_bind_double(faceStatement, 5, Double(box.size.width))
-            sqlite3_bind_double(faceStatement, 6, Double(box.size.height))
+            sqlite3_bind_double(faceStatement, 3, Double(face.box.origin.x))
+            sqlite3_bind_double(faceStatement, 4, Double(face.box.origin.y))
+            sqlite3_bind_double(faceStatement, 5, Double(face.box.size.width))
+            sqlite3_bind_double(faceStatement, 6, Double(face.box.size.height))
+            let inheritedPersonID = face.personID ?? existingFaces
+                .map { ($0.personID, intersectionOverUnion(face.box, $0.box)) }
+                .filter { $0.1 >= 0.5 }
+                .max(by: { $0.1 < $1.1 })?.0
+            if let personID = inheritedPersonID {
+                bindText(personID, to: faceStatement, at: 7)
+            } else {
+                sqlite3_bind_null(faceStatement, 7)
+            }
             let status = sqlite3_step(faceStatement)
             sqlite3_finalize(faceStatement)
             guard status == SQLITE_DONE else { return }
         }
         succeeded = true
+    }
+
+    private func intersectionOverUnion(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else { return 0 }
+        let intersectionArea = intersection.width * intersection.height
+        let unionArea = lhs.width * lhs.height + rhs.width * rhs.height - intersectionArea
+        return unionArea > 0 ? intersectionArea / unionArea : 0
     }
 
     private func readAssetIDs(matchingOllamaKeywords keywords: [String]) -> Set<String> {
@@ -740,16 +965,27 @@ final class PhotoMetadataCache {
     private func readFaceAssetIDs() -> [String] {
         guard let database else { return [] }
         let sql = """
-        SELECT asset_id
-        FROM face_detection_results
-        WHERE detector_version = ? AND face_count > 0
-        GROUP BY asset_id
-        ORDER BY MAX(detected_at) DESC;
+        WITH latest AS (
+            SELECT asset_id, MAX(detected_at) AS detected_at
+            FROM face_detection_results
+            WHERE detector_version IN (?, ?)
+            GROUP BY asset_id
+        )
+        SELECT result.asset_id
+        FROM latest
+        JOIN face_detection_results AS result
+          ON result.asset_id = latest.asset_id AND result.detected_at = latest.detected_at
+        WHERE result.detector_version IN (?, ?) AND result.face_count > 0
+        GROUP BY result.asset_id
+        ORDER BY MAX(result.detected_at) DESC;
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
         bindText(FaceDetectionResult.currentDetectorVersion, to: statement, at: 1)
+        bindText(FaceDetectionResult.legacyDetectorVersion, to: statement, at: 2)
+        bindText(FaceDetectionResult.currentDetectorVersion, to: statement, at: 3)
+        bindText(FaceDetectionResult.legacyDetectorVersion, to: statement, at: 4)
 
         var assetIDs: [String] = []
         while sqlite3_step(statement) == SQLITE_ROW {
