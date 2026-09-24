@@ -1,0 +1,18 @@
+# Xcode user-specific data
+xcuserdata/
+*.xcuserstate
+
+# macOS metadata
+.DS_Store
+
+# Local application data and model files
+*.sqlite
+*.sqlite-*
+*.db
+*.gguf
+
+# Local environment and credentials
+.env
+.env.*
+*.p12
+*.key

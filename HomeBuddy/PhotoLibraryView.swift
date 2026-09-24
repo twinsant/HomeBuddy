@@ -45,14 +45,8 @@ struct PhotoLibraryView: View {
     }
 
     var body: some View {
-        Group {
-            if let selectedIndex, displayedAssets.indices.contains(selectedIndex) {
-                PhotoViewerView(
-                    assets: displayedAssets,
-                    initialIndex: selectedIndex,
-                    onBack: { self.selectedIndex = nil }
-                )
-            } else if displayedAssets.isEmpty {
+        ZStack {
+            if displayedAssets.isEmpty {
                 ContentUnavailableView(
                     searchKeywords.isEmpty ? "“\(album.title)”中还没有照片" : "没有匹配的照片",
                     systemImage: "photo.on.rectangle.angled",
@@ -91,9 +85,22 @@ struct PhotoLibraryView: View {
                     }
                     .padding()
                 }
+                .allowsHitTesting(selectedIndex == nil)
+                .accessibilityHidden(selectedIndex != nil)
+            }
+
+            if let selectedIndex, displayedAssets.indices.contains(selectedIndex) {
+                PhotoViewerView(
+                    assets: displayedAssets,
+                    initialIndex: selectedIndex,
+                    onBack: { self.selectedIndex = nil }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+                .zIndex(1)
             }
         }
-        .frame(minWidth: 420, minHeight: 300)
+        .frame(minWidth: 420, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
         .searchable(text: $searchText, prompt: "搜索 Ollama 识别文字")
         .onChange(of: searchText) { _, _ in
             // 搜索结果数组会异步变化，旧的大图索引不再可靠。
