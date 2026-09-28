@@ -67,6 +67,33 @@ final class HomeBuddyUITests: XCTestCase {
     }
 
     @MainActor
+    func testReturnToAlbumScrollsToCurrentPhoto() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstThumbnail = app.buttons["photoThumbnail-0"]
+        guard firstThumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要已授权且当前相册有照片的测试环境")
+        }
+        firstThumbnail.click()
+
+        let next = app.buttons["下一张"]
+        for _ in 0..<15 {
+            guard next.isEnabled else {
+                throw XCTSkip("需要当前相册至少有 16 张照片")
+            }
+            next.click()
+        }
+
+        app.buttons["backToPhotoLibrary"].click()
+        let currentThumbnail = app.buttons["photoThumbnail-15"]
+        let visible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: currentThumbnail
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

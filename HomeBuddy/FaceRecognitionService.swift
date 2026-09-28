@@ -73,11 +73,13 @@ actor FaceRecognitionService {
     private var scopedModelURL: URL?
 
     func recognize(image: CGImage) throws -> [FaceEmbedding] {
+        try Task.checkCancellation()
         guard let modelURL = FaceRecognitionConfiguration.modelURL() else {
             throw ServiceError.modelNotConfigured
         }
         try loadModelIfNeeded(at: modelURL)
         guard let bridge else { throw ServiceError.modelNotConfigured }
+        try Task.checkCancellation()
 
         let rawFaces: [[String: Any]]
         do {

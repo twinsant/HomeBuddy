@@ -14,6 +14,7 @@ struct PhotoLibraryView: View {
     let album: PhotoAlbum
     let assets: [PHAsset]
     @State private var selectedIndex: Int?
+    @State private var viewerAssets: [PHAsset] = []
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
 
@@ -45,65 +46,80 @@ struct PhotoLibraryView: View {
     }
 
     var body: some View {
-        ZStack {
-            if displayedAssets.isEmpty {
-                ContentUnavailableView(
-                    searchKeywords.isEmpty ? "“\(album.title)”中还没有照片" : "没有匹配的照片",
-                    systemImage: "photo.on.rectangle.angled",
-                    description: Text(
-                        searchKeywords.isEmpty
-                            ? "这个相册中暂时没有可显示的图片。"
-                            : "没有找到包含全部关键词的 Ollama 识别文字。"
+        ScrollViewReader { scrollProxy in
+            ZStack {
+                if displayedAssets.isEmpty {
+                    ContentUnavailableView(
+                        searchKeywords.isEmpty ? "“\(album.title)”中还没有照片" : "没有匹配的照片",
+                        systemImage: "photo.on.rectangle.angled",
+                        description: Text(
+                            searchKeywords.isEmpty
+                                ? "这个相册中暂时没有可显示的图片。"
+                                : "没有找到包含全部关键词的 Ollama 识别文字。"
+                        )
                     )
-                )
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if !searchKeywords.isEmpty {
-                            Text("找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !searchKeywords.isEmpty {
+                                Text("找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
 
-                        LazyVGrid(columns: columns, spacing: 16) {
-                            ForEach(Array(displayedAssets.enumerated()), id: \.element.localIdentifier) { index, asset in
-                                Button {
-                                    guard displayedAssets.indices.contains(index) else { return }
-                                    selectedIndex = index
-                                } label: {
-                                    PhotoThumbnailView(asset: asset)
-                                        .contentShape(Rectangle())
+                            LazyVGrid(columns: columns, spacing: 16) {
+                                ForEach(Array(displayedAssets.enumerated()), id: \.element.localIdentifier) { index, asset in
+                                    Button {
+                                        guard displayedAssets.indices.contains(index) else { return }
+                                        viewerAssets = displayedAssets
+                                        selectedIndex = index
+                                    } label: {
+                                        PhotoThumbnailView(asset: asset)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .frame(maxWidth: .infinity)
+                                    .contentShape(Rectangle())
+                                    .accessibilityLabel("查看照片")
+                                    .accessibilityIdentifier("photoThumbnail-\(index)")
+                                    .help("点击查看大图")
+                                    .id(asset.localIdentifier)
                                 }
-                                .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity)
-                                .contentShape(Rectangle())
-                                .accessibilityLabel("查看照片")
-                                .help("点击查看大图")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding()
+                    }
+                    .allowsHitTesting(selectedIndex == nil)
+                    .accessibilityHidden(selectedIndex != nil)
+                }
+
+                if let selectedIndex, viewerAssets.indices.contains(selectedIndex) {
+                    PhotoViewerView(
+                        assets: viewerAssets,
+                        initialIndex: selectedIndex,
+                        onBack: { assetID in
+                            self.selectedIndex = nil
+                            // 关闭覆盖层后再滚动；列表可能已因搜索或刷新移除这张照片。
+                            DispatchQueue.main.async {
+                                guard self.selectedIndex == nil,
+                                      self.displayedAssets.contains(where: { $0.localIdentifier == assetID }) else { return }
+                                withAnimation {
+                                    scrollProxy.scrollTo(assetID, anchor: .center)
+                                }
                             }
                         }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding()
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .zIndex(1)
                 }
-                .allowsHitTesting(selectedIndex == nil)
-                .accessibilityHidden(selectedIndex != nil)
-            }
-
-            if let selectedIndex, displayedAssets.indices.contains(selectedIndex) {
-                PhotoViewerView(
-                    assets: displayedAssets,
-                    initialIndex: selectedIndex,
-                    onBack: { self.selectedIndex = nil }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black)
-                .zIndex(1)
             }
         }
         .frame(minWidth: 420, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
         .searchable(text: $searchText, prompt: "搜索 Ollama 识别文字")
         .onChange(of: searchText) { _, _ in
-            // 搜索结果数组会异步变化，旧的大图索引不再可靠。
+            // 搜索条件改变时关闭查看器，不再显示旧结果中的照片。
             selectedIndex = nil
         }
         .task(id: searchTaskID) {
@@ -164,7 +180,7 @@ private struct PhotoThumbnailView: View {
 private struct PhotoViewerView: View {
     let assets: [PHAsset]
     let initialIndex: Int
-    let onBack: () -> Void
+    let onBack: (String) -> Void
 
     @State private var currentIndex: Int
     @State private var image: NSImage?
@@ -182,7 +198,13 @@ private struct PhotoViewerView: View {
     @State private var hasLoadedFaceData = false
     @State private var hasLoadedPeople = false
     @State private var recognitionAttemptedAssetID: String?
+    @State private var photoGeneration = UUID()
+    @State private var automaticRecognitionTask: Task<Void, Never>?
+    @State private var recognitionTask: Task<Void, Never>?
+    @State private var isFindingCandidates = false
+    @State private var recognitionFailed = false
     @State private var people: [Person] = []
+    @State private var mostLabeledPeople: [PersonFaceCount] = []
     @State private var selectedFaceIndex: Int?
     @State private var isShowingPersonAssignment = false
     @State private var isOllamaAnalyzing = false
@@ -198,7 +220,7 @@ private struct PhotoViewerView: View {
     init(
         assets: [PHAsset],
         initialIndex: Int,
-        onBack: @escaping () -> Void
+        onBack: @escaping (String) -> Void
     ) {
         self.assets = assets
         let boundedIndex = assets.isEmpty ? 0 : min(max(initialIndex, 0), assets.count - 1)
@@ -230,7 +252,7 @@ private struct PhotoViewerView: View {
 
             HStack(spacing: 0) {
                 ZStack {
-                    Color.black
+                    Color.black.opacity(0.7)
 
                     if let image {
                         ZStack {
@@ -264,6 +286,7 @@ private struct PhotoViewerView: View {
                             ) { index in
                                 selectedFaceIndex = index
                                 isShowingPersonAssignment = true
+                                refreshMostLabeledPeople()
                             }
                         }
                         .scaleEffect(displayedZoomScale)
@@ -279,7 +302,6 @@ private struct PhotoViewerView: View {
                         )
                     } else {
                         ProgressView()
-                            .tint(.white)
                     }
 
                     if let detectedFaceCount {
@@ -296,10 +318,17 @@ private struct PhotoViewerView: View {
                     if isRecognizingFaces || !faceRecognitionStatus.isEmpty {
                         HStack(spacing: 8) {
                             if isRecognizingFaces { ProgressView().controlSize(.small).tint(.white) }
-                            Text(isRecognizingFaces ? "正在识别人脸并查询候选人物…" : faceRecognitionStatus)
+                            Text(isRecognizingFaces
+                                 ? (isFindingCandidates ? "正在查询可能人物…"
+                                    : recognitionAttemptedAssetID == nil ? "准备识别人脸…" : "正在识别人脸…")
+                                 : faceRecognitionStatus)
                                 .font(.caption)
                                 .foregroundStyle(.white)
                                 .lineLimit(2)
+                            if recognitionFailed {
+                                Button("重试") { startFaceRecognition(force: true) }
+                                    .buttonStyle(.bordered)
+                            }
                         }
                         .padding(10)
                         .background(.black.opacity(0.75), in: Capsule())
@@ -352,9 +381,11 @@ private struct PhotoViewerView: View {
             loadOllamaText()
             loadFaceDetectionResult()
         }
+        .onDisappear { invalidateRecognition() }
         .sheet(isPresented: $isShowingPersonAssignment, onDismiss: { selectedFaceIndex = nil }) {
             PersonAssignmentSheet(
                 people: people,
+                mostLabeledPeople: mostLabeledPeople,
                 currentPersonID: selectedFaceIndex.flatMap { index in
                     detectedFaces.indices.contains(index) ? detectedFaces[index].personID : nil
                 },
@@ -427,7 +458,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("识别人脸并匹配", systemImage: "person.crop.rectangle.stack")
                 }
-                .disabled(image == nil || isRecognizingFaces)
+                .disabled(image == nil || !hasLoadedFaceData || !hasLoadedPeople || recognitionTask != nil)
                 .help("使用本地模型识别人脸，并从 Chroma 查询可能人物")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -502,19 +533,32 @@ private struct PhotoViewerView: View {
 
     private func showPrevious() {
         guard currentIndex > 0 else { return }
-        currentIndex -= 1
+        navigate(to: currentIndex - 1)
     }
 
     private func showNext() {
         guard currentIndex + 1 < assets.count else { return }
-        currentIndex += 1
+        navigate(to: currentIndex + 1)
+    }
+
+    private func navigate(to index: Int) {
+        invalidateRecognition()
+        image = nil
+        metadata = nil
+        ollamaText = nil
+        detectedFaceCount = nil
+        detectedFaceBoxes = []
+        detectedFaces = []
+        faceEmbeddings = []
+        currentIndex = index
     }
 
     private func exitViewer() {
         // 先清理查看器状态，避免在 500% 缩放或平移过程中退出时残留手势状态。
+        invalidateRecognition()
         zoomScale = 1
         imageOffset = .zero
-        onBack()
+        onBack(currentAsset.localIdentifier)
     }
 
     private func handleTrackpadScroll(_ horizontalDelta: CGFloat) {
@@ -571,8 +615,10 @@ private struct PhotoViewerView: View {
     }
 
     private func loadCurrentImage() {
+        invalidateRecognition()
         let asset = currentAsset
         let assetID = asset.localIdentifier
+        let generation = photoGeneration
         image = nil
         zoomScale = 1
         imageOffset = .zero
@@ -602,7 +648,7 @@ private struct PhotoViewerView: View {
         ) { nsImage, _ in
             guard let nsImage else { return }
             Task { @MainActor in
-                guard currentAsset.localIdentifier == assetID else { return }
+                guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
                 image = nsImage
                 maybeStartFaceRecognition()
             }
@@ -636,14 +682,16 @@ private struct PhotoViewerView: View {
     private func loadFaceDetectionResult() {
         let asset = currentAsset
         let assetID = asset.localIdentifier
+        let generation = photoGeneration
         detectedFaceCount = nil
         detectedFaceBoxes = []
         detectedFaces = []
+        mostLabeledPeople = []
         hasLoadedFaceData = false
         hasLoadedPeople = false
 
         PhotoMetadataCache.shared.faceDetectionResult(for: asset) { result in
-            guard currentAsset.localIdentifier == assetID else { return }
+            guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
             if let result {
                 detectedFaceCount = result.faceCount
                 detectedFaces = result.faces
@@ -653,10 +701,20 @@ private struct PhotoViewerView: View {
             maybeStartFaceRecognition()
         }
         PhotoMetadataCache.shared.people { loadedPeople in
-            guard currentAsset.localIdentifier == assetID else { return }
+            guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
             people = loadedPeople
             hasLoadedPeople = true
             maybeStartFaceRecognition()
+        }
+        refreshMostLabeledPeople()
+    }
+
+    private func refreshMostLabeledPeople() {
+        let assetID = currentAsset.localIdentifier
+        let generation = photoGeneration
+        PhotoMetadataCache.shared.mostLabeledPeople { rankedPeople in
+            guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
+            mostLabeledPeople = rankedPeople
         }
     }
 
@@ -669,6 +727,8 @@ private struct PhotoViewerView: View {
               detectedFaces.indices.contains(faceIndex)
         else { return }
 
+        invalidateRecognition()
+        let generation = photoGeneration
         let previous = detectedFaces[faceIndex].personID
         let asset = explicitAsset ?? currentAsset
         let assetID = asset.localIdentifier
@@ -676,11 +736,13 @@ private struct PhotoViewerView: View {
         detectedFaces[faceIndex] = DetectedFace(box: face.box, personID: personID, candidate: nil)
         isShowingPersonAssignment = false
         PhotoMetadataCache.shared.saveFacePersonID(personID, faceIndex: faceIndex, for: asset) { succeeded in
-            guard currentAsset.localIdentifier == assetID else { return }
+            guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
             if !succeeded, detectedFaces.indices.contains(faceIndex) {
                 detectedFaces[faceIndex] = DetectedFace(box: face.box, personID: previous, candidate: face.candidate)
                 faceRecognitionStatus = "人物已保存，但人脸标注未写入 SQLite。请重新检测后再试。"
-            } else if let embedding = faceEmbeddings.first(where: { boxesMatch($0.box, face.box) }) {
+            } else if succeeded {
+                refreshMostLabeledPeople()
+                guard let embedding = faceEmbeddings.first(where: { boxesMatch($0.box, face.box) }) else { return }
                 Task {
                     do {
                         let configuration = ChromaConfiguration.current
@@ -725,30 +787,53 @@ private struct PhotoViewerView: View {
     private func maybeStartFaceRecognition() {
         guard image != nil, hasLoadedFaceData, hasLoadedPeople,
               recognitionAttemptedAssetID != currentAsset.localIdentifier,
-              !isRecognizingFaces
+              !isRecognizingFaces, automaticRecognitionTask == nil
         else { return }
         guard FaceRecognitionConfiguration.modelURL() != nil else {
             faceRecognitionStatus = "人脸框来自基础检测；请在设置中选择 GGUF 模型，再点击“识别人脸并匹配”生成候选。"
             return
         }
-        startFaceRecognition(force: false)
+        let generation = photoGeneration
+        isRecognizingFaces = true
+        automaticRecognitionTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, photoGeneration == generation else { return }
+            automaticRecognitionTask = nil
+            startFaceRecognition(force: false)
+        }
+    }
+
+    private func invalidateRecognition() {
+        photoGeneration = UUID()
+        automaticRecognitionTask?.cancel()
+        automaticRecognitionTask = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        isRecognizingFaces = false
+        isFindingCandidates = false
+        recognitionFailed = false
+        faceRecognitionStatus = ""
     }
 
     private func startFaceRecognition(force: Bool) {
+        if force { invalidateRecognition() }
         let asset = currentAsset
         let assetID = asset.localIdentifier
+        let generation = photoGeneration
         guard let image,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
         if !force, recognitionAttemptedAssetID == assetID { return }
         recognitionAttemptedAssetID = assetID
         isRecognizingFaces = true
+        isFindingCandidates = false
+        recognitionFailed = false
         faceRecognitionStatus = ""
 
-        Task {
+        recognitionTask = Task {
             do {
                 let embeddings = try await FaceRecognitionService.shared.recognize(image: cgImage)
-                guard currentAsset.localIdentifier == assetID else { return }
+                guard !Task.isCancelled, photoGeneration == generation else { return }
                 faceEmbeddings = embeddings
                 var matchedFaces = embeddings.map { embedding in
                     let existing = detectedFaces
@@ -759,41 +844,56 @@ private struct PhotoViewerView: View {
                 detectedFaces = matchedFaces
                 detectedFaceBoxes = matchedFaces.map(\.box)
                 detectedFaceCount = matchedFaces.count
+                isFindingCandidates = true
                 do {
                     matchedFaces = try await indexConfirmedFacesAndFindCandidates(
                         faces: matchedFaces,
                         embeddings: embeddings,
-                        assetID: assetID
+                        assetID: assetID,
+                        generation: generation
                     )
-                    guard currentAsset.localIdentifier == assetID else { return }
+                    guard !Task.isCancelled, photoGeneration == generation else { return }
                     detectedFaces = matchedFaces
                     faceRecognitionStatus = matchedFaces.contains(where: { $0.candidate != nil })
                         ? "紫色提示是可能人物，请点击人脸确认或重新标注。"
                         : "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。"
                 } catch {
+                    guard !Task.isCancelled, photoGeneration == generation else { return }
                     faceRecognitionStatus = "本地检测完成，但 Chroma 查询失败：\(error.localizedDescription)"
+                    recognitionFailed = true
                 }
+                guard !Task.isCancelled, photoGeneration == generation else { return }
                 PhotoMetadataCache.shared.saveFaceDetectionResult(
                     FaceDetectionResult(faceCount: matchedFaces.count, faces: matchedFaces, detectorVersion: FaceDetectionResult.currentDetectorVersion),
                     for: asset
                 )
             } catch {
-                guard currentAsset.localIdentifier == assetID else { return }
+                guard !Task.isCancelled, photoGeneration == generation else { return }
                 faceRecognitionStatus = error.localizedDescription
+                recognitionFailed = true
             }
-            if currentAsset.localIdentifier == assetID { isRecognizingFaces = false }
+            guard !Task.isCancelled, photoGeneration == generation else { return }
+            isRecognizingFaces = false
+            isFindingCandidates = false
+            recognitionTask = nil
         }
     }
 
     private func indexConfirmedFacesAndFindCandidates(
         faces: [DetectedFace],
         embeddings: [FaceEmbedding],
-        assetID: String
+        assetID: String,
+        generation: UUID
     ) async throws -> [DetectedFace] {
+        try Task.checkCancellation()
+        guard photoGeneration == generation else { throw CancellationError() }
         let configuration = ChromaConfiguration.current
         let collectionID = try await ChromaService.shared.createCollectionIfNeeded(configuration: configuration)
-        try await ChromaService.shared.delete(where: ["asset_id": assetID], collectionID: collectionID, configuration: configuration)
+        try Task.checkCancellation()
+        guard photoGeneration == generation else { throw CancellationError() }
 
+        // 浏览照片时不清空已有索引：取消查询不能让后续照片失去匹配来源。
+        // 人工修改标注时由 assignPerson 单独更新或删除对应向量。
         let indexed = zip(faces, embeddings).enumerated().compactMap { index, pair -> (String, [Double], [String: String])? in
             let (face, embedding) = pair
             guard let personID = face.personID,
@@ -806,32 +906,29 @@ private struct PhotoViewerView: View {
             )
         }
         if !indexed.isEmpty {
+            try Task.checkCancellation()
+            guard photoGeneration == generation else { throw CancellationError() }
             try await ChromaService.shared.upsert(
                 ids: indexed.map(\.0), embeddings: indexed.map(\.1), metadatas: indexed.map(\.2),
                 collectionID: collectionID, configuration: configuration
             )
         }
+        try Task.checkCancellation()
+        guard photoGeneration == generation else { throw CancellationError() }
 
         var result = faces
         for index in result.indices where result[index].personID == nil {
+            try Task.checkCancellation()
+            guard photoGeneration == generation else { throw CancellationError() }
             let query = try await ChromaService.shared.query(
                 embedding: embeddings[index].vector,
                 results: 5,
                 collectionID: collectionID,
                 configuration: configuration
             )
-            let candidate = (query.ids.first ?? []).indices.compactMap { candidateIndex -> FacePersonCandidate? in
-                guard candidateIndex < (query.distances.first?.count ?? 0),
-                      candidateIndex < (query.metadatas.first?.count ?? 0),
-                      let metadata = query.metadatas.first?[candidateIndex] ?? nil,
-                      metadata["model_id"] == FaceRecognitionService.modelIdentifier,
-                      let personID = metadata["person_id"],
-                      let person = people.first(where: { $0.id == personID })
-                else { return nil }
-                let distance = query.distances[0][candidateIndex]
-                guard distance.isFinite, distance <= FaceRecognitionService.maximumCosineDistance else { return nil }
-                return FacePersonCandidate(personID: personID, displayName: person.displayName, distance: distance)
-            }.first
+            try Task.checkCancellation()
+            guard photoGeneration == generation else { throw CancellationError() }
+            let candidate = FaceCandidateRanking.topFive(from: query, people: people).first
             guard let candidate else { continue }
             result[index] = DetectedFace(
                 box: result[index].box,
@@ -1249,8 +1346,37 @@ private struct FaceBoundingBoxOverlay: View {
     }
 }
 
+enum FaceCandidateRanking {
+    static func normalizedName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    static func topFive(from query: ChromaQueryResult, people: [Person]) -> [FacePersonCandidate] {
+        guard let ids = query.ids.first,
+              let distances = query.distances.first,
+              let metadatas = query.metadatas.first else { return [] }
+
+        let peopleByID = Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
+        let ranked = zip(zip(ids, distances), metadatas).compactMap { pair, metadata -> FacePersonCandidate? in
+            guard let metadata,
+                  metadata["model_id"] == FaceRecognitionService.modelIdentifier,
+                  let personID = metadata["person_id"],
+                  let person = peopleByID[personID],
+                  pair.1.isFinite,
+                  pair.1 <= FaceRecognitionService.maximumCosineDistance
+            else { return nil }
+            return FacePersonCandidate(personID: personID, displayName: person.displayName, distance: pair.1)
+        }.sorted { $0.distance < $1.distance }
+
+        var seenNames = Set<String>()
+        return Array(ranked.filter { seenNames.insert(normalizedName($0.displayName)).inserted }.prefix(5))
+    }
+}
+
 private struct PersonAssignmentSheet: View {
     let people: [Person]
+    let mostLabeledPeople: [PersonFaceCount]
     let currentPersonID: String?
     let candidate: FacePersonCandidate?
     let onAssign: (String?) -> Void
@@ -1262,7 +1388,7 @@ private struct PersonAssignmentSheet: View {
     private var uniquePeople: [Person] {
         var seenNames = Set<String>()
         return people.filter { person in
-            seenNames.insert(Self.normalizedName(person.displayName)).inserted
+            seenNames.insert(FaceCandidateRanking.normalizedName(person.displayName)).inserted
         }
     }
 
@@ -1278,15 +1404,31 @@ private struct PersonAssignmentSheet: View {
                 }
             }
 
+            if !mostLabeledPeople.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("标注最多的人物")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(mostLabeledPeople) { entry in
+                            Button {
+                                onAssign(entry.person.id)
+                                dismiss()
+                            } label: {
+                                Text("\(entry.person.displayName) · \(entry.count) 张")
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .help("\(entry.person.displayName)：已标注 \(entry.count) 张人脸，点击确定并保存")
+                        }
+                    }
+                }
+            }
+
             if let candidate {
                 Button {
-                    let personID = people.first(where: { $0.id == candidate.personID })
-                        .flatMap { candidatePerson in
-                            uniquePeople.first(where: {
-                                Self.normalizedName($0.displayName) == Self.normalizedName(candidatePerson.displayName)
-                            })?.id
-                        } ?? candidate.personID
-                    onAssign(personID)
+                    onAssign(candidate.personID)
                     dismiss()
                 } label: {
                     Label("确认是 \(candidate.displayName)（相似度 \(candidate.similarityPercent)%）", systemImage: "checkmark.circle")
@@ -1317,13 +1459,6 @@ private struct PersonAssignmentSheet: View {
         .padding(24)
         .frame(width: 360)
         .onAppear {
-            if let candidate,
-               let candidatePerson = people.first(where: { $0.id == candidate.personID }) {
-                selectedPersonID = uniquePeople.first(where: {
-                    Self.normalizedName($0.displayName) == Self.normalizedName(candidatePerson.displayName)
-                })?.id
-                return
-            }
             guard let currentPersonID,
                   let currentPerson = people.first(where: { $0.id == currentPersonID })
             else {
@@ -1331,14 +1466,9 @@ private struct PersonAssignmentSheet: View {
                 return
             }
             selectedPersonID = uniquePeople.first(where: {
-                Self.normalizedName($0.displayName) == Self.normalizedName(currentPerson.displayName)
+                FaceCandidateRanking.normalizedName($0.displayName) == FaceCandidateRanking.normalizedName(currentPerson.displayName)
             })?.id
         }
-    }
-
-    private static func normalizedName(_ name: String) -> String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 }
 

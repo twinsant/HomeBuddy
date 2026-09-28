@@ -53,6 +53,13 @@ struct Person: Identifiable, Equatable {
     let displayName: String
 }
 
+struct PersonFaceCount: Identifiable, Equatable {
+    let person: Person
+    let count: Int
+
+    var id: String { person.id }
+}
+
 struct DetectedFace: Equatable {
     let box: CGRect
     let personID: String?
@@ -409,6 +416,13 @@ final class PhotoMetadataCache {
         }
     }
 
+    func mostLabeledPeople(completion: @escaping ([PersonFaceCount]) -> Void) {
+        queue.async { [weak self] in
+            let people = self?.readMostLabeledPeople() ?? []
+            DispatchQueue.main.async { completion(people) }
+        }
+    }
+
     func savePerson(named displayName: String, completion: @escaping (Person?) -> Void) {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
@@ -579,6 +593,8 @@ final class PhotoMetadataCache {
         );
         CREATE INDEX IF NOT EXISTS detected_faces_result_id_index
             ON detected_faces(result_id);
+        CREATE INDEX IF NOT EXISTS face_detection_results_asset_revision_index
+            ON face_detection_results(asset_id, modification_time DESC);
         """
         sqlite3_exec(database, faceTablesSQL, nil, nil, nil)
         sqlite3_exec(database, "CREATE TABLE IF NOT EXISTS people (person_id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);", nil, nil, nil)
@@ -748,6 +764,44 @@ final class PhotoMetadataCache {
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let id = text(from: statement, at: 0), let name = text(from: statement, at: 1) else { continue }
             result.append(Person(id: id, displayName: name))
+        }
+        return result
+    }
+
+    // Each asset can have legacy and current detector results (or older photo revisions).
+    // Count faces only from the newest photo revision and its preferred detector result.
+    static let mostLabeledPeopleSQL = """
+        SELECT p.person_id, p.display_name, COUNT(*) AS labeled_faces
+        FROM detected_faces f
+        JOIN face_detection_results r ON r.id = f.result_id
+        JOIN people p ON p.person_id = f.person_id
+        WHERE r.id = (
+            SELECT latest.id FROM face_detection_results latest
+            WHERE latest.asset_id = r.asset_id
+            ORDER BY latest.modification_time DESC,
+                CASE WHEN latest.detector_version = '\(FaceDetectionResult.currentDetectorVersion)' THEN 0 ELSE 1 END,
+                latest.detected_at DESC, latest.id DESC
+            LIMIT 1
+        )
+        GROUP BY p.person_id, p.display_name
+        ORDER BY labeled_faces DESC, p.display_name COLLATE NOCASE, p.person_id
+        LIMIT 5;
+        """
+
+    private func readMostLabeledPeople() -> [PersonFaceCount] {
+        guard let database else { return [] }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, Self.mostLabeledPeopleSQL, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        var result: [PersonFaceCount] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = text(from: statement, at: 0),
+                  let name = text(from: statement, at: 1) else { continue }
+            result.append(PersonFaceCount(
+                person: Person(id: id, displayName: name),
+                count: Int(sqlite3_column_int(statement, 2))
+            ))
         }
         return result
     }
