@@ -11,14 +11,15 @@ final class BatchRecognitionModelStore: ObservableObject {
     private var phaseSubscriptions: [String: AnyCancellable] = [:]
     @Published private(set) var activeModel: BatchRecognitionModel?
 
-    func model(for albumID: String, assets: [PHAsset]) -> BatchRecognitionModel {
-        if let model = models[albumID] {
+    func model(for albumID: String, assets: [LibraryAsset]) -> BatchRecognitionModel {
+        let key = albumID + "|" + (PhotoMetadataCache.shared.databaseURL?.path ?? "") + "|" + assets.map(\.revisionID).joined(separator: "|")
+        if let model = models[key] {
             return model
         }
 
         let model = BatchRecognitionModel(assets: assets)
-        models[albumID] = model
-        phaseSubscriptions[albumID] = model.$phase.sink { [weak self, weak model] phase in
+        models[key] = model
+        phaseSubscriptions[key] = model.$phase.sink { [weak self, weak model] phase in
             guard let self, let model else { return }
             if phase == .running || (phase == .paused && self.activeModel === model) {
                 self.activeModel = model
@@ -39,7 +40,7 @@ final class BatchRecognitionModel: ObservableObject {
         case finished
     }
 
-    let assets: [PHAsset]
+    let assets: [LibraryAsset]
     @Published private(set) var completed = 0
     @Published private(set) var currentName = ""
     @Published private(set) var phase: Phase = .ready
@@ -49,11 +50,12 @@ final class BatchRecognitionModel: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var terminationObserver: NSObjectProtocol?
+    private var runGeneration = UUID()
     private var countedAssetIDs = Set<String>()
     private var totalProcessingTime: TimeInterval = 0
     private var processingCount = 0
 
-    init(assets: [PHAsset]) {
+    init(assets: [LibraryAsset]) {
         self.assets = assets
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -90,18 +92,22 @@ final class BatchRecognitionModel: ObservableObject {
         guard phase != .running, completed < assets.count else { return }
         phase = .running
         startedAt = startedAt ?? Date()
+        let generation = UUID()
+        runGeneration = generation
         task = Task { [weak self] in
-            await self?.run()
+            await self?.run(generation: generation)
         }
     }
 
     func pause() {
         guard phase == .running else { return }
+        runGeneration = UUID()
         task?.cancel()
         phase = .paused
     }
 
     func stop() {
+        runGeneration = UUID()
         task?.cancel()
         task = nil
         if phase == .running {
@@ -109,11 +115,15 @@ final class BatchRecognitionModel: ObservableObject {
         }
     }
 
-    private func run() async {
+    private func run(generation: UUID) async {
+        failures = []
         for asset in assets where !Task.isCancelled {
+            if countedAssetIDs.contains(asset.localIdentifier) { continue }
             var processingStartedAt: Date?
             do {
                 if let cached = await cachedText(for: asset), !cached.isEmpty {
+                    try Task.checkCancellation()
+                    guard runGeneration == generation else { return }
                     markCompleted(asset)
                     continue
                 }
@@ -131,24 +141,35 @@ final class BatchRecognitionModel: ObservableObject {
                 if let processingStartedAt {
                     recordProcessingTime(since: processingStartedAt)
                 }
-                PhotoMetadataCache.shared.saveOllamaText(text, model: configuration.model, for: asset)
+                let saved: Bool = await withCheckedContinuation { continuation in
+                    PhotoMetadataCache.shared.saveOllamaText(text, model: configuration.model, for: asset) { succeeded in
+                        continuation.resume(returning: succeeded)
+                    }
+                }
+                try Task.checkCancellation()
+                guard runGeneration == generation else { return }
+                guard saved else { throw DiskLibraryError.message("图片或数据库已变化，识别结果未保存。请重新打开任务。") }
                 markCompleted(asset)
             } catch is CancellationError {
                 break
             } catch {
+                guard runGeneration == generation else { return }
                 if let processingStartedAt {
                     recordProcessingTime(since: processingStartedAt)
                 }
                 failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
-                markCompleted(asset)
             }
         }
 
+        guard runGeneration == generation else { return }
+        task = nil
         if Task.isCancelled {
             phase = .paused
         } else if completed >= assets.count {
             phase = .finished
             currentName = ""
+        } else {
+            phase = .paused
         }
     }
 
@@ -158,12 +179,12 @@ final class BatchRecognitionModel: ObservableObject {
         averageProcessingTime = totalProcessingTime / Double(processingCount)
     }
 
-    private func markCompleted(_ asset: PHAsset) {
+    private func markCompleted(_ asset: LibraryAsset) {
         guard countedAssetIDs.insert(asset.localIdentifier).inserted else { return }
         completed += 1
     }
 
-    private func cachedText(for asset: PHAsset) async -> String? {
+    private func cachedText(for asset: LibraryAsset) async -> String? {
         await withCheckedContinuation { continuation in
             PhotoMetadataCache.shared.ollamaText(for: asset) { text in
                 continuation.resume(returning: text)
@@ -171,7 +192,7 @@ final class BatchRecognitionModel: ObservableObject {
         }
     }
 
-    private func imageData(for asset: PHAsset) async throws -> Data {
+    private func imageData(for asset: LibraryAsset) async throws -> Data {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let options = PHImageRequestOptions()
@@ -180,7 +201,7 @@ final class BatchRecognitionModel: ObservableObject {
                 options.isNetworkAccessAllowed = true
                 options.version = .current
 
-                PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
+                LibraryImageManager.shared.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
                     if let error = info?[PHImageErrorKey] as? Error {
                         continuation.resume(throwing: error)
                     } else if let data {
@@ -361,7 +382,7 @@ struct BatchRecognitionView: View {
         options.deliveryMode = .fastFormat
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = true
-        PHImageManager.default().requestImage(
+        LibraryImageManager.shared.requestImage(
             for: asset,
             targetSize: CGSize(width: 112, height: 112),
             contentMode: .aspectFill,
@@ -401,14 +422,15 @@ final class BatchFaceRecognitionModelStore: ObservableObject {
     private var phaseSubscriptions: [String: AnyCancellable] = [:]
     @Published private(set) var activeModel: BatchFaceRecognitionModel?
 
-    func model(for albumID: String, assets: [PHAsset]) -> BatchFaceRecognitionModel {
-        if let model = models[albumID] {
+    func model(for albumID: String, assets: [LibraryAsset]) -> BatchFaceRecognitionModel {
+        let key = albumID + "|" + (PhotoMetadataCache.shared.databaseURL?.path ?? "") + "|" + assets.map(\.revisionID).joined(separator: "|")
+        if let model = models[key] {
             return model
         }
 
         let model = BatchFaceRecognitionModel(assets: assets)
-        models[albumID] = model
-        phaseSubscriptions[albumID] = model.$phase.sink { [weak self, weak model] phase in
+        models[key] = model
+        phaseSubscriptions[key] = model.$phase.sink { [weak self, weak model] phase in
             guard let self, let model else { return }
             if phase == .running || (phase == .paused && self.activeModel === model) {
                 self.activeModel = model
@@ -429,7 +451,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
         case finished
     }
 
-    let assets: [PHAsset]
+    let assets: [LibraryAsset]
     @Published private(set) var completed = 0
     @Published private(set) var currentName = ""
     @Published private(set) var phase: Phase = .ready
@@ -437,8 +459,9 @@ final class BatchFaceRecognitionModel: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var countedAssetIDs = Set<String>()
+    private var runGeneration = UUID()
 
-    init(assets: [PHAsset]) {
+    init(assets: [LibraryAsset]) {
         self.assets = assets
     }
 
@@ -453,24 +476,32 @@ final class BatchFaceRecognitionModel: ObservableObject {
     func startOrResume() {
         guard phase != .running, completed < assets.count else { return }
         phase = .running
+        let generation = UUID()
+        runGeneration = generation
         task = Task { [weak self] in
-            await self?.run()
+            await self?.run(generation: generation)
         }
     }
 
     func pause() {
         guard phase == .running else { return }
+        runGeneration = UUID()
         task?.cancel()
         phase = .paused
     }
 
-    private func run() async {
+    private func run(generation: UUID) async {
+        failures = []
         for asset in assets where !Task.isCancelled {
+            if countedAssetIDs.contains(asset.localIdentifier) { continue }
             currentName = asset.localIdentifier
             do {
                 // Detection cache hits still need an embedding backfill for assigned faces.
                 if let cached = await cachedResult(for: asset) {
+                    try Task.checkCancellation()
                     try await indexMissingEmbeddings(in: cached, for: asset)
+                    try Task.checkCancellation()
+                    guard runGeneration == generation else { return }
                     markCompleted(asset)
                     continue
                 }
@@ -482,18 +513,24 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 }.value
                 try Task.checkCancellation()
                 await save(result, for: asset)
+                try Task.checkCancellation()
                 guard let savedResult = await cachedResult(for: asset) else {
                     throw FaceRecognitionError.cacheUnavailable
                 }
                 try await indexMissingEmbeddings(in: savedResult, for: asset, photo: image)
+                try Task.checkCancellation()
+                guard runGeneration == generation else { return }
                 markCompleted(asset)
             } catch is CancellationError {
                 break
             } catch {
+                guard runGeneration == generation else { return }
                 failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
             }
         }
 
+        guard runGeneration == generation else { return }
+        task = nil
         if Task.isCancelled {
             phase = .paused
         } else if completed >= assets.count {
@@ -504,12 +541,12 @@ final class BatchFaceRecognitionModel: ObservableObject {
         }
     }
 
-    private func markCompleted(_ asset: PHAsset) {
+    private func markCompleted(_ asset: LibraryAsset) {
         guard countedAssetIDs.insert(asset.localIdentifier).inserted else { return }
         completed += 1
     }
 
-    private func cachedResult(for asset: PHAsset) async -> FaceDetectionResult? {
+    private func cachedResult(for asset: LibraryAsset) async -> FaceDetectionResult? {
         await withCheckedContinuation { continuation in
             PhotoMetadataCache.shared.faceDetectionResult(for: asset) { result in
                 continuation.resume(returning: result)
@@ -517,7 +554,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
         }
     }
 
-    private func save(_ result: FaceDetectionResult, for asset: PHAsset) async {
+    private func save(_ result: FaceDetectionResult, for asset: LibraryAsset) async {
         await withCheckedContinuation { continuation in
             PhotoMetadataCache.shared.saveFaceDetectionResult(result, for: asset) {
                 continuation.resume()
@@ -527,7 +564,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
 
     private func indexMissingEmbeddings(
         in result: FaceDetectionResult,
-        for asset: PHAsset,
+        for asset: LibraryAsset,
         photo suppliedPhoto: (data: Data, orientation: CGImagePropertyOrientation)? = nil
     ) async throws {
         let confirmedFaces = result.faces.enumerated().compactMap { index, face -> (Int, String)? in
@@ -585,7 +622,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 throw FaceRecognitionError.invalidEmbedding
             }
             records.append((
-                "\(asset.localIdentifier)#\(embeddingIndex)",
+                "\(asset.localIdentifier)#\(faceIndex)",
                 vector,
                 [
                     "asset_id": asset.localIdentifier,
@@ -636,7 +673,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
         return unionArea > 0 ? intersectionArea / unionArea : 0
     }
 
-    private func imageData(for asset: PHAsset) async throws -> (data: Data, orientation: CGImagePropertyOrientation) {
+    private func imageData(for asset: LibraryAsset) async throws -> (data: Data, orientation: CGImagePropertyOrientation) {
         try await withCheckedThrowingContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
@@ -644,7 +681,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
             options.isNetworkAccessAllowed = true
             options.version = .current
 
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) {
+            LibraryImageManager.shared.requestImageDataAndOrientation(for: asset, options: options) {
                 data, _, orientation, info in
                 if let error = info?[PHImageErrorKey] as? Error {
                     continuation.resume(throwing: error)

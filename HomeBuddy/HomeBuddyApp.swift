@@ -7,10 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import Darwin
 
 @main
 struct HomeBuddyApp: App {
     init() {
+        // Avoid ggml Metal residency-set teardown asserting during process exit.
+        setenv("GGML_METAL_NO_RESIDENCY", "1", 1)
+
         // Create the metadata cache before the first photo is opened.
         _ = PhotoMetadataCache.shared
     }

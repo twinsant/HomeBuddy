@@ -6,19 +6,20 @@
 import AppKit
 import ImageIO
 import Photos
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 import Vision
 
 struct PhotoLibraryView: View {
     let album: PhotoAlbum
-    let assets: [PHAsset]
+    let assets: [LibraryAsset]
     @State private var selectedIndex: Int?
-    @State private var viewerAssets: [PHAsset] = []
+    @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
 
-    init(album: PhotoAlbum, assets: [PHAsset]) {
+    init(album: PhotoAlbum, assets: [LibraryAsset]) {
         self.album = album
         self.assets = assets
     }
@@ -34,14 +35,14 @@ struct PhotoLibraryView: View {
             .filter { !$0.isEmpty }
     }
 
-    private var displayedAssets: [PHAsset] {
+    private var displayedAssets: [LibraryAsset] {
         guard !searchKeywords.isEmpty, let searchResultIDs else { return assets }
         return assets.filter { searchResultIDs.contains($0.localIdentifier) }
     }
 
     private var searchTaskID: String {
         let keywords = searchKeywords.joined(separator: "\u{1F}" )
-        let assetIDs = assets.map(\.localIdentifier).joined(separator: "\u{1F}")
+        let assetIDs = assets.map(\.revisionID).joined(separator: "\u{1F}")
         return "\(keywords)|\(assetIDs)"
     }
 
@@ -84,6 +85,7 @@ struct PhotoLibraryView: View {
                                     .accessibilityIdentifier("photoThumbnail-\(index)")
                                     .help("点击查看大图")
                                     .id(asset.localIdentifier)
+                                    .modifier(PhotoExportMenu(asset: asset))
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -122,6 +124,19 @@ struct PhotoLibraryView: View {
             // 搜索条件改变时关闭查看器，不再显示旧结果中的照片。
             selectedIndex = nil
         }
+        .onChange(of: assets.map(\.revisionID)) { _, revisions in
+            // Recognition may reorder the people collection without changing any image.
+            let available = Set(revisions)
+            if !viewerAssets.allSatisfy({ available.contains($0.revisionID) }) { selectedIndex = nil }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
+            let keywords = searchKeywords
+            guard !keywords.isEmpty else { return }
+            PhotoMetadataCache.shared.assetIDs(matchingOllamaKeywords: keywords) { result in
+                guard searchKeywords == keywords else { return }
+                searchResultIDs = result
+            }
+        }
         .task(id: searchTaskID) {
             let keywords = searchKeywords
             guard !keywords.isEmpty else {
@@ -138,9 +153,130 @@ struct PhotoLibraryView: View {
     }
 }
 
+private struct PhotoExportMenu: ViewModifier {
+    let asset: LibraryAsset
+    @State private var isExporting = false
+    @State private var exportError: String?
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Button("导出照片…", systemImage: "square.and.arrow.up") {
+                    let snapshot = asset
+                    Task { await export(snapshot) }
+                }
+                .disabled(isExporting)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if isExporting {
+                    ProgressView("正在导出…")
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .allowsHitTesting(false)
+                }
+            }
+            .alert("照片导出失败", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
+                Button("好", role: .cancel) { exportError = nil }
+            } message: {
+                Text(exportError ?? "未知错误")
+            }
+    }
+
+    @MainActor
+    private func export(_ snapshot: LibraryAsset) async {
+        guard !isExporting else { return }
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            let details = try PhotoExporter.fileDetails(for: snapshot)
+            let panel = NSSavePanel()
+            panel.title = "导出照片"
+            panel.message = "保留原始格式和元数据；Live Photo 仅导出静态照片。"
+            panel.prompt = "导出"
+            panel.nameFieldStringValue = details.filename
+            panel.canCreateDirectories = true
+            if let type = details.type { panel.allowedContentTypes = [type] }
+            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            try await PhotoExporter.export(snapshot, to: destination)
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+}
+
+/// Exports file bytes, never a rendered thumbnail or a re-encoded image.
+nonisolated enum PhotoExporter {
+    static func originalResource(for photo: PHAsset) throws -> PHAssetResource {
+        let resources = PHAssetResource.assetResources(for: photo)
+        guard let resource = resources.first(where: { $0.type == .photo })
+            ?? resources.first(where: { $0.type == .alternatePhoto }) else {
+            throw DiskLibraryError.message("找不到可导出的原始照片资源。")
+        }
+        return resource
+    }
+
+    static func fileDetails(for asset: LibraryAsset) throws -> (filename: String, type: UTType?) {
+        switch asset.source {
+        case .disk(_, let image):
+            let file = URL(fileURLWithPath: image.relativePath)
+            return (file.lastPathComponent, UTType(filenameExtension: file.pathExtension))
+        case .photos(let photo):
+            let resource = try originalResource(for: photo)
+            return (URL(fileURLWithPath: resource.originalFilename).lastPathComponent,
+                    UTType(resource.uniformTypeIdentifier))
+        }
+    }
+
+    static func export(_ asset: LibraryAsset, to destination: URL) async throws {
+        let accessed = destination.startAccessingSecurityScopedResource()
+        defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+        switch asset.source {
+        case .disk(let directory, let image):
+            try await Task.detached(priority: .userInitiated) {
+                let root = try DiskImageLoader.resolvedDirectory(directory).url
+                let accessed = root.startAccessingSecurityScopedResource()
+                defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+                let source = root.appendingPathComponent(image.relativePath)
+                let sourcePath = source.resolvingSymlinksInPath().standardizedFileURL
+                let targetPath = destination.resolvingSymlinksInPath().standardizedFileURL
+                let sourceAttributes = try FileManager.default.attributesOfItem(atPath: sourcePath.path)
+                let targetAttributes = try? FileManager.default.attributesOfItem(atPath: targetPath.path)
+                let sameFile = targetAttributes != nil
+                    && (sourceAttributes[.systemNumber] as? NSNumber) == (targetAttributes?[.systemNumber] as? NSNumber)
+                    && (sourceAttributes[.systemFileNumber] as? NSNumber) == (targetAttributes?[.systemFileNumber] as? NSNumber)
+                guard sourcePath != targetPath, !sameFile else {
+                    throw DiskLibraryError.message("导出位置不能是原始照片，请选择其他文件路径。")
+                }
+                let original = try DiskImageLoader.originalData(directory: directory, image: image)
+                try original.data.write(to: destination, options: .atomic)
+            }.value
+        case .photos(let photo):
+            let resource = try originalResource(for: photo)
+            let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: staging) }
+            let options = PHAssetResourceRequestOptions()
+            options.isNetworkAccessAllowed = true
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                PHAssetResourceManager.default().writeData(for: resource, toFile: staging, options: options) { error in
+                    if let error { continuation.resume(throwing: error) }
+                    else { continuation.resume() }
+                }
+            }
+            // Download must succeed before replacing an existing destination.
+            try await Task.detached(priority: .userInitiated) {
+                try Data(contentsOf: staging).write(to: destination, options: .atomic)
+            }.value
+        }
+    }
+}
+
 private struct PhotoThumbnailView: View {
-    let asset: PHAsset
+    let asset: LibraryAsset
     @State private var image: Image?
+    @State private var loadError: String?
 
     var body: some View {
         Group {
@@ -148,6 +284,8 @@ private struct PhotoThumbnailView: View {
                 image
                     .resizable()
                     .scaledToFill()
+            } else if let loadError {
+                Image(systemName: "photo.badge.exclamationmark").help(loadError)
             } else {
                 ProgressView()
             }
@@ -155,20 +293,25 @@ private struct PhotoThumbnailView: View {
         .frame(minWidth: 140, maxWidth: .infinity, minHeight: 140, maxHeight: 220)
         .background(.quaternary)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .task(id: asset.localIdentifier) {
+        .task(id: asset.revisionID) {
+            image = nil
+            loadError = nil
             let options = PHImageRequestOptions()
             options.deliveryMode = .opportunistic
             options.resizeMode = .fast
             options.isNetworkAccessAllowed = true
 
             let targetSize = CGSize(width: 500, height: 500)
-            PHImageManager.default().requestImage(
+            LibraryImageManager.shared.requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { nsImage, _ in
-                guard let nsImage else { return }
+            ) { nsImage, info in
+                guard let nsImage else {
+                    loadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "图片无法读取"
+                    return
+                }
                 Task { @MainActor in
                     image = Image(nsImage: nsImage)
                 }
@@ -177,16 +320,86 @@ private struct PhotoThumbnailView: View {
     }
 }
 
+private struct LivePhotoPlayer: NSViewRepresentable {
+    let photo: PHLivePhoto
+    let playbackID: UUID?
+    let onPlaybackChanged: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> PHLivePhotoView {
+        let view = PHLivePhotoView()
+        view.contentMode = .aspectFit
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ view: PHLivePhotoView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.onPlaybackChanged = onPlaybackChanged
+        if view.livePhoto !== photo { view.livePhoto = photo }
+        guard coordinator.playbackID != playbackID else { return }
+        coordinator.playbackID = playbackID
+        // Playback starts after SwiftUI finishes updating and the view has its size.
+        coordinator.eventGeneration = UUID()
+        let generation = coordinator.eventGeneration
+        Task { @MainActor [weak view, weak coordinator] in
+            guard let view, let coordinator, coordinator.eventGeneration == generation else { return }
+            if playbackID != nil { view.startPlayback(with: .full) }
+            else { view.stopPlayback() }
+        }
+    }
+
+    static func dismantleNSView(_ view: PHLivePhotoView, coordinator: Coordinator) {
+        coordinator.eventGeneration = UUID()
+        coordinator.onPlaybackChanged = nil
+        view.delegate = nil
+        view.stopPlayback()
+        view.livePhoto = nil
+    }
+
+    final class Coordinator: NSObject, PHLivePhotoViewDelegate {
+        var playbackID: UUID?
+        var eventGeneration = UUID()
+        var onPlaybackChanged: ((Bool) -> Void)?
+
+        func livePhotoView(_ livePhotoView: PHLivePhotoView, willBeginPlaybackWith playbackStyle: PHLivePhotoViewPlaybackStyle) {
+            notify(true)
+        }
+
+        func livePhotoView(_ livePhotoView: PHLivePhotoView, didEndPlaybackWith playbackStyle: PHLivePhotoViewPlaybackStyle) {
+            notify(false)
+        }
+
+        private func notify(_ playing: Bool) {
+            let generation = eventGeneration
+            Task { @MainActor [weak self] in
+                guard let self, eventGeneration == generation else { return }
+                onPlaybackChanged?(playing)
+            }
+        }
+    }
+}
+
 private struct PhotoViewerView: View {
-    let assets: [PHAsset]
+    let assets: [LibraryAsset]
     let initialIndex: Int
     let onBack: (String) -> Void
 
     @State private var currentIndex: Int
     @State private var image: NSImage?
+    @State private var imageLoadError: String?
+    @State private var livePhoto: PHLivePhoto?
+    @State private var livePhotoRequestID: PHImageRequestID?
+    @State private var livePhotoGeneration = UUID()
+    @State private var livePhotoLoadError: String?
+    @State private var isLoadingLivePhoto = false
+    @State private var isPlayingLivePhoto = false
+    @State private var livePhotoPlaybackID: UUID?
     @State private var metadata: PhotoMetadata?
     @State private var ollamaText: String?
     @State private var isShowingInfo = true
+    @State private var isShowingFaceBoxes = true
     @State private var isAnalyzing = false
     @State private var analysisResult: VisionAnalysisResult?
     @State private var detectedFaceCount: Int?
@@ -218,7 +431,7 @@ private struct PhotoViewerView: View {
     }
 
     init(
-        assets: [PHAsset],
+        assets: [LibraryAsset],
         initialIndex: Int,
         onBack: @escaping (String) -> Void
     ) {
@@ -229,7 +442,7 @@ private struct PhotoViewerView: View {
         _currentIndex = State(initialValue: boundedIndex)
     }
 
-    private var currentAsset: PHAsset {
+    private var currentAsset: LibraryAsset {
         assets[currentIndex]
     }
 
@@ -246,6 +459,28 @@ private struct PhotoViewerView: View {
 
                 Text("照片 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)
+                if currentAsset.isLivePhoto {
+                    Label("LIVE", systemImage: "livephoto")
+                        .accessibilityIdentifier("livePhotoBadge")
+                    if isLoadingLivePhoto {
+                        ProgressView().controlSize(.small)
+                        Text("正在加载 Live Photo…").font(.caption)
+                    } else if livePhoto != nil {
+                        Button {
+                            isPlayingLivePhoto.toggle()
+                            livePhotoPlaybackID = isPlayingLivePhoto ? UUID() : nil
+                        } label: {
+                            Label(isPlayingLivePhoto ? "停止" : "播放 Live Photo",
+                                  systemImage: isPlayingLivePhoto ? "stop.fill" : "play.fill")
+                        }
+                        .accessibilityIdentifier("playLivePhoto")
+                    } else if let livePhotoLoadError {
+                        Text("动态内容加载失败，显示静态照片")
+                            .font(.caption)
+                            .help(livePhotoLoadError)
+                        Button("重试") { loadLivePhoto() }
+                    }
+                }
                 Spacer()
             }
             .padding()
@@ -256,10 +491,21 @@ private struct PhotoViewerView: View {
 
                     if let image {
                         ZStack {
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
+                            if let livePhoto {
+                                let generation = livePhotoGeneration
+                                LivePhotoPlayer(photo: livePhoto, playbackID: livePhotoPlaybackID) { playing in
+                                    guard livePhotoGeneration == generation else { return }
+                                    isPlayingLivePhoto = playing
+                                }
+                                .id(generation)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .padding(24)
+                            } else {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .padding(24)
+                            }
 
                             TrackpadScrollView(
                                 isZoomed: displayedZoomScale > 1,
@@ -279,14 +525,16 @@ private struct PhotoViewerView: View {
                                 }
                             )
 
-                            FaceBoundingBoxOverlay(
-                                imageSize: image.size,
-                                faces: detectedFaces,
-                                personNames: Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0.displayName) })
-                            ) { index in
-                                selectedFaceIndex = index
-                                isShowingPersonAssignment = true
-                                refreshMostLabeledPeople()
+                            if isShowingFaceBoxes && !isPlayingLivePhoto {
+                                FaceBoundingBoxOverlay(
+                                    imageSize: image.size,
+                                    faces: detectedFaces,
+                                    personNames: Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0.displayName) })
+                                ) { index in
+                                    selectedFaceIndex = index
+                                    isShowingPersonAssignment = true
+                                    refreshMostLabeledPeople()
+                                }
                             }
                         }
                         .scaleEffect(displayedZoomScale)
@@ -300,6 +548,8 @@ private struct PhotoViewerView: View {
                                     zoomScale = min(max(zoomScale * value, 1), 5)
                                 }
                         )
+                    } else if let imageLoadError {
+                        ContentUnavailableView("图片无法读取", systemImage: "photo.badge.exclamationmark", description: Text(imageLoadError))
                     } else {
                         ProgressView()
                     }
@@ -340,6 +590,7 @@ private struct PhotoViewerView: View {
                 // clipped 只裁剪画面；交互区域也必须限制在未缩放的视口内。
                 .contentShape(.interaction, Rectangle())
                 .clipped()
+                .modifier(PhotoExportMenu(asset: currentAsset))
                 .onGeometryChange(for: CGSize.self) { proxy in
                     proxy.size
                 } action: { size in
@@ -375,13 +626,16 @@ private struct PhotoViewerView: View {
             .padding()
         }
         .frame(minWidth: 700, minHeight: 500)
-        .task(id: currentAsset.localIdentifier) {
+        .task(id: currentAsset.revisionID) {
             loadCurrentImage()
             loadMetadata()
             loadOllamaText()
             loadFaceDetectionResult()
         }
-        .onDisappear { invalidateRecognition() }
+        .onDisappear {
+            invalidateRecognition()
+            resetLivePhoto()
+        }
         .sheet(isPresented: $isShowingPersonAssignment, onDismiss: { selectedFaceIndex = nil }) {
             PersonAssignmentSheet(
                 people: people,
@@ -449,6 +703,18 @@ private struct PhotoViewerView: View {
                 }
                 .disabled(image == nil || isAnalyzing)
                 .help("检测当前照片中的人脸")
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
+                Button {
+                    isShowingFaceBoxes.toggle()
+                } label: {
+                    Label(isShowingFaceBoxes ? "隐藏人脸方框" : "显示人脸方框", systemImage: "person.crop.rectangle")
+                }
+                .keyboardShortcut("f", modifiers: [])
+                .help(isShowingFaceBoxes ? "隐藏人脸方框（F）" : "显示人脸方框（F）")
+                .accessibilityIdentifier("toggleFaceBoxes")
             }
             .sharedBackgroundVisibility(.hidden)
 
@@ -543,6 +809,7 @@ private struct PhotoViewerView: View {
 
     private func navigate(to index: Int) {
         invalidateRecognition()
+        resetLivePhoto()
         image = nil
         metadata = nil
         ollamaText = nil
@@ -556,6 +823,7 @@ private struct PhotoViewerView: View {
     private func exitViewer() {
         // 先清理查看器状态，避免在 500% 缩放或平移过程中退出时残留手势状态。
         invalidateRecognition()
+        resetLivePhoto()
         zoomScale = 1
         imageOffset = .zero
         onBack(currentAsset.localIdentifier)
@@ -616,10 +884,12 @@ private struct PhotoViewerView: View {
 
     private func loadCurrentImage() {
         invalidateRecognition()
+        loadLivePhoto()
         let asset = currentAsset
         let assetID = asset.localIdentifier
         let generation = photoGeneration
         image = nil
+        imageLoadError = nil
         zoomScale = 1
         imageOffset = .zero
         analysisResult = nil
@@ -633,6 +903,7 @@ private struct PhotoViewerView: View {
         recognitionAttemptedAssetID = nil
         selectedFaceIndex = nil
         isShowingPersonAssignment = false
+        isAnalyzing = false
         isOllamaAnalyzing = false
 
         let options = PHImageRequestOptions()
@@ -640,17 +911,70 @@ private struct PhotoViewerView: View {
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = true
 
-        PHImageManager.default().requestImage(
+        LibraryImageManager.shared.requestImage(
             for: asset,
             targetSize: CGSize(width: 2400, height: 2400),
             contentMode: .aspectFit,
             options: options
-        ) { nsImage, _ in
-            guard let nsImage else { return }
+        ) { nsImage, info in
             Task { @MainActor in
                 guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
+                guard let nsImage else {
+                    imageLoadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "请刷新目录或重新授权。"
+                    return
+                }
                 image = nsImage
                 maybeStartFaceRecognition()
+            }
+        }
+    }
+
+    private func resetLivePhoto() {
+        // Independent of recognition: relabeling a face must not invalidate playback.
+        livePhotoGeneration = UUID()
+        if let livePhotoRequestID {
+            PHImageManager.default().cancelImageRequest(livePhotoRequestID)
+        }
+        livePhotoRequestID = nil
+        livePhoto = nil
+        livePhotoLoadError = nil
+        isLoadingLivePhoto = false
+        isPlayingLivePhoto = false
+        livePhotoPlaybackID = nil
+    }
+
+    private func loadLivePhoto() {
+        resetLivePhoto()
+        let asset = currentAsset
+        guard asset.isLivePhoto, case .photos(let photo) = asset.source else { return }
+        let generation = livePhotoGeneration
+        let revision = asset.revisionID
+        isLoadingLivePhoto = true
+        let options = PHLivePhotoRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.version = .current
+        options.isNetworkAccessAllowed = true
+        livePhotoRequestID = PHImageManager.default().requestLivePhoto(
+            for: photo,
+            targetSize: CGSize(width: 2400, height: 2400),
+            contentMode: .aspectFit,
+            options: options
+        ) { result, info in
+            let cancelled = (info?[PHImageCancelledKey] as? Bool) == true
+            let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) == true
+            let errorMessage = (info?[PHImageErrorKey] as? Error)?.localizedDescription
+            Task { @MainActor in
+                guard livePhotoGeneration == generation, currentAsset.revisionID == revision,
+                      !cancelled, !degraded else { return }
+                livePhotoRequestID = nil
+                isLoadingLivePhoto = false
+                guard let result else {
+                    livePhotoLoadError = errorMessage ?? "无法加载 Live Photo 的动态内容。"
+                    return
+                }
+                livePhoto = result
+                isPlayingLivePhoto = true
+                livePhotoPlaybackID = UUID()
             }
         }
     }
@@ -721,7 +1045,7 @@ private struct PhotoViewerView: View {
     private func assignPerson(
         _ personID: String?,
         faceIndex explicitFaceIndex: Int? = nil,
-        asset explicitAsset: PHAsset? = nil
+        asset explicitAsset: LibraryAsset? = nil
     ) {
         guard let faceIndex = explicitFaceIndex ?? selectedFaceIndex,
               detectedFaces.indices.contains(faceIndex)
@@ -950,13 +1274,13 @@ private struct PhotoViewerView: View {
         return area > 0 ? intersection.width * intersection.height / area : 0
     }
 
-    private func loadMetadataFromPhotos(asset: PHAsset, assetID: String) {
+    private func loadMetadataFromPhotos(asset: LibraryAsset, assetID: String) {
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
 
-        PHImageManager.default().requestImageDataAndOrientation(
+        LibraryImageManager.shared.requestImageDataAndOrientation(
             for: asset,
             options: options
         ) { data, uti, _, _ in
@@ -973,6 +1297,7 @@ private struct PhotoViewerView: View {
     private func analyzeCurrentImage(_ type: VisionAnalysisType) {
         let asset = currentAsset
         let assetID = asset.localIdentifier
+        let generation = photoGeneration
         guard let image,
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else {
@@ -993,6 +1318,7 @@ private struct PhotoViewerView: View {
             let result = Self.performAnalysis(type, on: cgImage)
             Task { @MainActor in
                 guard currentAsset.localIdentifier == assetID else { return }
+                guard photoGeneration == generation else { return }
                 isAnalyzing = false
                 detectedFaceCount = result.faceCount
                 analysisResult = type == .faces ? nil : result
@@ -1009,7 +1335,7 @@ private struct PhotoViewerView: View {
                         FaceDetectionResult(
                             faceCount: faceCount,
                             faces: faces,
-                            detectorVersion: FaceDetectionResult.currentDetectorVersion
+                            detectorVersion: FaceDetectionResult.legacyDetectorVersion
                         ),
                         for: asset
                     )
@@ -1036,7 +1362,9 @@ private struct PhotoViewerView: View {
             return
         }
 
-        let assetID = currentAsset.localIdentifier
+        let asset = currentAsset
+        let assetID = asset.localIdentifier
+        let generation = photoGeneration
         let configuration = OllamaConfiguration.current
         isOllamaAnalyzing = true
         analysisResult = nil
@@ -1047,13 +1375,19 @@ private struct PhotoViewerView: View {
                     imageData: imageData,
                     configuration: configuration
                 )
-                guard currentAsset.localIdentifier == assetID else { return }
+                guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
+                let saved: Bool = await withCheckedContinuation { continuation in
+                    PhotoMetadataCache.shared.saveOllamaText(text, model: configuration.model, for: asset) { succeeded in
+                        continuation.resume(returning: succeeded)
+                    }
+                }
+                guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
+                guard saved else { throw DiskLibraryError.message("图片或数据库已变化，识别结果未保存。请刷新后重试。") }
                 isOllamaAnalyzing = false
-                PhotoMetadataCache.shared.saveOllamaText(text, model: configuration.model, for: currentAsset)
                 ollamaText = text
                 analysisResult = VisionAnalysisResult(title: "Ollama 图片识别结果", message: text)
             } catch {
-                guard currentAsset.localIdentifier == assetID else { return }
+                guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
                 isOllamaAnalyzing = false
                 analysisResult = VisionAnalysisResult(
                     title: "Ollama 识别失败",
@@ -1533,18 +1867,15 @@ struct PhotoMetadata {
         self.location = location
     }
 
-    init(asset: PHAsset, data: Data, uti: String?) {
+    init(asset: LibraryAsset, data: Data, uti: String?) {
         fileType = uti.flatMap { UTType($0)?.localizedDescription } ?? uti
         fileSize = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
         pixelSize = "\(asset.pixelWidth) × \(asset.pixelHeight)"
         metadataUpdatedAt = Date()
-        creationDate = asset.creationDate.map {
-            $0.formatted(date: .abbreviated, time: .shortened)
-        } ?? "未知"
-
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
         else {
+            creationDate = asset.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "未知"
             camera = nil
             lens = nil
             exposure = nil
@@ -1557,6 +1888,9 @@ struct PhotoMetadata {
         let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any]
         let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
         let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any]
+        creationDate = asset.creationDate?.formatted(date: .abbreviated, time: .shortened)
+            ?? (exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String)
+            ?? "未知"
 
         let make = tiff?[kCGImagePropertyTIFFMake as String] as? String
         let model = tiff?[kCGImagePropertyTIFFModel as String] as? String
@@ -1590,7 +1924,7 @@ struct PhotoMetadata {
 }
 
 private struct PhotoInfoSidebar: View {
-    let asset: PHAsset
+    let asset: LibraryAsset
     let metadata: PhotoMetadata?
     let ollamaText: String?
 
@@ -1599,6 +1933,10 @@ private struct PhotoInfoSidebar: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("照片信息")
                     .font(.title3.weight(.semibold))
+
+                if let path = asset.relativePath {
+                    Text(path).font(.caption).textSelection(.enabled)
+                }
 
                 if let databaseURL = PhotoMetadataCache.shared.databaseURL {
                     Text("SQLite 缓存")
@@ -1620,7 +1958,7 @@ private struct PhotoInfoSidebar: View {
                         ("元数据更新时间", metadata.metadataUpdatedAt.map {
                             $0.formatted(date: .abbreviated, time: .shortened)
                         } ?? "未知"),
-                        ("状态", asset.isFavorite ? "已收藏" : "未收藏")
+                        ("状态", asset.relativePath == nil ? (asset.isFavorite ? "已收藏" : "未收藏") : "磁盘图片（只读）")
                     ])
 
                     let shootingRows = [

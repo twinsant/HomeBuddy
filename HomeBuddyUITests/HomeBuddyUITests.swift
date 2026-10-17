@@ -94,6 +94,41 @@ final class HomeBuddyUITests: XCTestCase {
     }
 
     @MainActor
+    func testDiskPhotosUseFullViewerAndRecognitionTools() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let directory = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "diskDirectory-")).firstMatch
+        guard directory.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要至少一个已添加且包含图片的磁盘目录")
+        }
+        directory.click()
+        let thumbnail = app.buttons["photoThumbnail-0"]
+        guard thumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("当前磁盘目录需要至少一张已索引图片")
+        }
+        XCTAssertTrue(app.buttons["Ollama 批量识图"].isEnabled)
+        XCTAssertTrue(app.buttons["批量人脸识别"].isEnabled)
+        thumbnail.click()
+        let back = app.buttons["backToPhotoLibrary"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        let zoom = app.buttons["100%"]
+        XCTAssertTrue(zoom.waitForExistence(timeout: 5))
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: zoom)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 30), .completed)
+        for tool in ["复制图片", "识别文字", "识别二维码和条码", "检测人脸", "Ollama 识图", "照片信息"] {
+            XCTAssertTrue(app.buttons[tool].exists, "磁盘查看器缺少工具：\(tool)")
+        }
+        app.buttons["识别文字"].click()
+        XCTAssertTrue(app.staticTexts["文字识别结果"].waitForExistence(timeout: 30))
+        app.buttons["完成"].click()
+        for _ in 0..<16 { app.buttons["放大"].click() }
+        XCTAssertTrue(app.buttons["500%"].exists)
+        back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        XCTAssertTrue(back.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(thumbnail.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

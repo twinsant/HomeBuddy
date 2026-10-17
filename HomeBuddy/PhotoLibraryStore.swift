@@ -39,7 +39,7 @@ struct PhotoAlbum: Identifiable, Hashable {
         )
     }
 
-    private init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool, isRecents: Bool) {
+    init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool, isRecents: Bool) {
         self.id = id
         self.title = title
         self.isAllPhotos = isAllPhotos
@@ -93,7 +93,7 @@ struct FaceDetectionResult: Equatable {
 
 @MainActor
 final class PhotoLibraryStore: ObservableObject {
-    @Published private(set) var albums: [PhotoAlbum] = []
+    @Published private(set) var albums: [PhotoAlbum] = [.faceAlbum]
     @Published private(set) var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     func requestAccessAndLoad() {
@@ -119,18 +119,23 @@ final class PhotoLibraryStore: ObservableObject {
         loadAlbums()
     }
 
-    func assets(for album: PhotoAlbum) -> [PHAsset] {
+    func assets(for album: PhotoAlbum) -> [LibraryAsset] {
         if album.isFaceAlbum {
             let assetIDs = PhotoMetadataCache.shared.faceAssetIDs()
             guard !assetIDs.isEmpty else { return [] }
 
-            let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil)
+            let photoIDs = assetIDs.filter { !$0.hasPrefix("disk:") }
+            let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: photoIDs, options: nil)
             let assetsByID = Dictionary(
                 uniqueKeysWithValues: fetchedAssets.objects(at: IndexSet(integersIn: 0..<fetchedAssets.count))
                     .filter { $0.mediaType == .image }
                     .map { ($0.localIdentifier, $0) }
             )
-            return assetIDs.compactMap { assetsByID[$0] }
+            let diskAssets = PhotoMetadataCache.shared.faceDiskAssets()
+            return assetIDs.compactMap { id in
+                if let photo = assetsByID[id] { return LibraryAsset(photo) }
+                return diskAssets[id]
+            }
         }
 
         guard let collection = PHAssetCollection.fetchAssetCollections(
@@ -145,6 +150,7 @@ final class PhotoLibraryStore: ObservableObject {
         let result = PHAsset.fetchAssets(in: collection, options: options)
         return result.objects(at: IndexSet(integersIn: 0..<result.count))
             .filter { $0.mediaType == .image }
+            .map(LibraryAsset.init)
     }
 
     private func loadAlbums() {
@@ -211,7 +217,8 @@ final class PhotoMetadataCache {
 
     @discardableResult
     func setStorageDirectory(_ directory: URL) -> URL? {
-        queue.sync {
+        defer { NotificationCenter.default.post(name: .init("HomeBuddyDatabaseDidChange"), object: nil) }
+        return queue.sync {
             let directory = directory.standardizedFileURL
             guard directory.hasDirectoryPath else { return databaseURLValue }
 
@@ -269,7 +276,7 @@ final class PhotoMetadataCache {
     }
 
     func metadata(
-        for asset: PHAsset,
+        for asset: LibraryAsset,
         completion: @escaping (PhotoMetadata?) -> Void
     ) {
         let identifier = asset.localIdentifier
@@ -278,25 +285,26 @@ final class PhotoMetadataCache {
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
-            let result = self?.read(
+            let result = self?.accepts(asset) == true ? self?.read(
                 identifier: identifier,
                 modificationTime: modificationTime,
                 width: width,
                 height: height
-            )
+            ) : nil
             DispatchQueue.main.async {
                 completion(result)
             }
         }
     }
 
-    func save(_ metadata: PhotoMetadata, for asset: PHAsset) {
+    func save(_ metadata: PhotoMetadata, for asset: LibraryAsset) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
         let width = asset.pixelWidth
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
+            guard self?.accepts(asset) == true else { return }
             self?.write(
                 metadata,
                 identifier: identifier,
@@ -307,19 +315,19 @@ final class PhotoMetadataCache {
         }
     }
 
-    func ollamaText(for asset: PHAsset, completion: @escaping (String?) -> Void) {
+    func ollamaText(for asset: LibraryAsset, completion: @escaping (String?) -> Void) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
         let width = asset.pixelWidth
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
-            let result = self?.readOllamaText(
+            let result = self?.accepts(asset) == true ? self?.readOllamaText(
                 identifier: identifier,
                 modificationTime: modificationTime,
                 width: width,
                 height: height
-            )
+            ) : nil
             DispatchQueue.main.async {
                 completion(result)
             }
@@ -345,13 +353,17 @@ final class PhotoMetadataCache {
         queue.sync { readFaceAssetIDs() }
     }
 
-    func saveOllamaText(_ text: String, model: String, for asset: PHAsset) {
+    func saveOllamaText(_ text: String, model: String, for asset: LibraryAsset, completion: ((Bool) -> Void)? = nil) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
         let width = asset.pixelWidth
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
+            guard self?.accepts(asset) == true else {
+                DispatchQueue.main.async { completion?(false) }
+                return
+            }
             self?.writeOllamaText(
                 text,
                 model: model,
@@ -360,23 +372,28 @@ final class PhotoMetadataCache {
                 width: width,
                 height: height
             )
+            let saved = self?.readOllamaText(identifier: identifier, modificationTime: modificationTime, width: width, height: height) == text
+            DispatchQueue.main.async {
+                if saved { NotificationCenter.default.post(name: .init("HomeBuddyRecognitionDidChange"), object: nil) }
+                completion?(saved)
+            }
         }
     }
 
-    func faceDetectionResult(for asset: PHAsset, completion: @escaping (FaceDetectionResult?) -> Void) {
+    func faceDetectionResult(for asset: LibraryAsset, completion: @escaping (FaceDetectionResult?) -> Void) {
         let identifier = asset.localIdentifier
         let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
         let width = asset.pixelWidth
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
-            let result = self?.readFaceDetectionResult(
+            let result = self?.accepts(asset) == true ? self?.readFaceDetectionResult(
                 identifier: identifier,
                 modificationTime: modificationTime,
                 width: width,
                 height: height,
                 detectorVersion: FaceDetectionResult.currentDetectorVersion
-            )
+            ) : nil
             DispatchQueue.main.async {
                 completion(result)
             }
@@ -385,7 +402,7 @@ final class PhotoMetadataCache {
 
     func saveFaceDetectionResult(
         _ result: FaceDetectionResult,
-        for asset: PHAsset,
+        for asset: LibraryAsset,
         completion: (() -> Void)? = nil
     ) {
         let identifier = asset.localIdentifier
@@ -394,17 +411,17 @@ final class PhotoMetadataCache {
         let height = asset.pixelHeight
 
         queue.async { [weak self] in
-            self?.writeFaceDetectionResult(
+            let accepted = self?.accepts(asset) == true
+            if accepted { self?.writeFaceDetectionResult(
                 result,
                 identifier: identifier,
                 modificationTime: modificationTime,
                 width: width,
                 height: height
-            )
-            if let completion {
-                DispatchQueue.main.async {
-                    completion()
-                }
+            ) }
+            DispatchQueue.main.async {
+                if accepted { NotificationCenter.default.post(name: .init("HomeBuddyRecognitionDidChange"), object: nil) }
+                completion?()
             }
         }
     }
@@ -447,7 +464,7 @@ final class PhotoMetadataCache {
     func saveFacePersonID(
         _ personID: String?,
         faceIndex: Int,
-        for asset: PHAsset,
+        for asset: LibraryAsset,
         completion: ((Bool) -> Void)? = nil
     ) {
         let identifier = asset.localIdentifier
@@ -455,7 +472,7 @@ final class PhotoMetadataCache {
         let width = asset.pixelWidth
         let height = asset.pixelHeight
         queue.async { [weak self] in
-            let succeeded = self?.writeFacePersonID(
+            let succeeded = self?.accepts(asset) == true && (self?.writeFacePersonID(
                 personID,
                 faceIndex: faceIndex,
                 identifier: identifier,
@@ -463,14 +480,72 @@ final class PhotoMetadataCache {
                 width: width,
                 height: height,
                 detectorVersion: FaceDetectionResult.currentDetectorVersion
-            ) ?? false
-            if let completion {
-                DispatchQueue.main.async { completion(succeeded) }
+            ) ?? false)
+            DispatchQueue.main.async {
+                if succeeded { NotificationCenter.default.post(name: .init("HomeBuddyRecognitionDidChange"), object: nil) }
+                completion?(succeeded)
             }
         }
     }
 
+    /// Executed only on the serial database queue, before any cache read/write.
+    func areCurrent(_ assets: [LibraryAsset]) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in continuation.resume(returning: assets.allSatisfy { accepts($0) }) }
+        }
+    }
+
+    private func accepts(_ asset: LibraryAsset) -> Bool {
+        guard databaseURLValue == asset.databaseURL else { return false }
+        guard case .disk(let directory, let image) = asset.source else { return true }
+        guard let database else { return false }
+        var statement: OpaquePointer?
+        let sql = "SELECT 1 FROM disk_images WHERE image_id = ? AND directory_id = ? AND modification_time = ? AND byte_size = ? AND pixel_width = ? AND pixel_height = ?;"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        bindText(image.id, to: statement, at: 1)
+        bindText(directory.id, to: statement, at: 2)
+        sqlite3_bind_double(statement, 3, image.modificationTime)
+        sqlite3_bind_int64(statement, 4, image.byteSize)
+        sqlite3_bind_int64(statement, 5, Int64(image.width))
+        sqlite3_bind_int64(statement, 6, Int64(image.height))
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    func faceDiskAssets() -> [String: LibraryAsset] {
+        let records: [(DiskDirectory, DiskImage)] = queue.sync {
+            guard let database else { return [] }
+            let index = DiskLibraryDatabase(database: database)
+            let faceIDs = Set(readFaceAssetIDs())
+            return ((try? index.directories()) ?? []).flatMap { directory in
+                ((try? index.images(directoryID: directory.id)) ?? [])
+                    .filter { faceIDs.contains($0.id) }
+                    .map { (directory, $0) }
+            }
+        }
+        return Dictionary(uniqueKeysWithValues: records.map { ($0.1.id, LibraryAsset(directory: $0.0, image: $0.1)) })
+    }
+
     private var databaseURLValue: URL?
+
+    /// Runs directory index operations on the same connection as the Photos caches.
+    func diskLibraryOperation<T: Sendable>(
+        expectedURL: URL? = nil,
+        _ operation: @escaping @Sendable (DiskLibraryDatabase) throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    guard let database else { throw DiskLibraryError.message("数据库不可用。") }
+                    if let expectedURL, expectedURL != databaseURLValue {
+                        throw DiskLibraryError.message("数据库已切换，请重新扫描目录。")
+                    }
+                    let result = try operation(DiskLibraryDatabase(database: database))
+                    continuation.resume(returning: result)
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
 
     private func openDatabase() {
         if let path = UserDefaults.standard.string(forKey: Self.directoryPathKey) {
@@ -524,6 +599,12 @@ final class PhotoMetadataCache {
             }
             databaseURLValue = url
             createTable()
+            do {
+                try DiskLibraryDatabase(database: database!).migrate()
+            } catch {
+                closeDatabase()
+                return false
+            }
             return true
         } catch {
             return false

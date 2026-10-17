@@ -6,12 +6,35 @@
 //
 
 import AppKit
+import Photos
 import SQLite3
 import Testing
 @testable import HomeBuddy
 
+nonisolated private final class PhotoTypeFixture: PHAsset, @unchecked Sendable {
+    let fixtureType: PHAssetMediaType
+    let fixtureSubtypes: PHAssetMediaSubtype
+
+    init(type: PHAssetMediaType, subtypes: PHAssetMediaSubtype) {
+        fixtureType = type
+        fixtureSubtypes = subtypes
+        super.init()
+    }
+
+    override var mediaType: PHAssetMediaType { fixtureType }
+    override var mediaSubtypes: PHAssetMediaSubtype { fixtureSubtypes }
+}
+
 @MainActor
 struct HomeBuddyTests {
+
+    @Test func livePhotoDetectionUsesPhotosMediaSubtype() {
+        #expect(LibraryAsset(PhotoTypeFixture(type: .image, subtypes: .photoLive)).isLivePhoto)
+        #expect(LibraryAsset(PhotoTypeFixture(type: .image, subtypes: [.photoLive, .photoHDR])).isLivePhoto)
+        #expect(!LibraryAsset(PhotoTypeFixture(type: .image, subtypes: [])).isLivePhoto)
+        #expect(!LibraryAsset(PhotoTypeFixture(type: .image, subtypes: .photoHDR)).isLivePhoto)
+        #expect(!LibraryAsset(PhotoTypeFixture(type: .video, subtypes: .photoLive)).isLivePhoto)
+    }
 
     @Test func horizontalSwipeNavigatesOnceWithoutMomentum() {
         var state = PhotoViewerScrollState()

@@ -29,7 +29,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("照片元数据") {
+            Section("照片数据库") {
                 LabeledContent("SQLite 存储目录") {
                     VStack(alignment: .trailing, spacing: 6) {
                         Text(storageDirectory?.path ?? "未配置")
@@ -45,7 +45,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("照片信息会缓存到该目录下的 photo-metadata.sqlite 文件中。")
+                Text("照片缓存、磁盘目录访问书签及图片索引保存在 photo-metadata.sqlite 中；原图不会存入数据库。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -189,7 +189,7 @@ struct SettingsView: View {
                 self.pendingDirectory = nil
             }
         } message: {
-            Text("目标目录中已存在 photo-metadata.sqlite。覆盖后目标目录中的缓存将被当前缓存替换。")
+            Text("目标目录中已存在 photo-metadata.sqlite。覆盖后，该数据库的照片缓存、人物标注、磁盘目录及图片索引都将被当前数据库替换。原图不受影响。")
         }
         .alert("无法切换存储目录", isPresented: $isShowingError) {
             Button("好", role: .cancel) { }
@@ -200,7 +200,7 @@ struct SettingsView: View {
 
     private func chooseStorageDirectory() {
         let panel = NSOpenPanel()
-        panel.title = "选择照片元数据存储目录"
+        panel.title = "选择照片数据库存储目录"
         panel.message = "选择目录即授予 HomeBuddy 对该目录的读写权限。"
         panel.prompt = "选择"
         panel.canChooseFiles = false
