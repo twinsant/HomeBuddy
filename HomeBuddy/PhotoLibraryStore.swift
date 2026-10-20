@@ -334,6 +334,39 @@ final class PhotoMetadataCache {
         }
     }
 
+    func ollamaFailureCount(for asset: LibraryAsset, completion: @escaping (Int) -> Void) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            let count = self?.accepts(asset) == true
+                ? self?.readOllamaFailureCount(identifier: identifier, modificationTime: modificationTime, width: width, height: height) ?? 0
+                : 0
+            DispatchQueue.main.async { completion(count) }
+        }
+    }
+
+    func recordOllamaFailure(for asset: LibraryAsset) {
+        let identifier = asset.localIdentifier
+        let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        let width = asset.pixelWidth
+        let height = asset.pixelHeight
+
+        queue.async { [weak self] in
+            guard let self, self.accepts(asset), self.incrementOllamaFailureCount(
+                identifier: identifier,
+                modificationTime: modificationTime,
+                width: width,
+                height: height
+            ) else { return }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .init("HomeBuddyRecognitionDidChange"), object: nil)
+            }
+        }
+    }
+
     func assetIDs(matchingOllamaKeywords keywords: [String], completion: @escaping (Set<String>) -> Void) {
         let normalizedKeywords = keywords
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -692,6 +725,9 @@ final class PhotoMetadataCache {
         if !columnExists("ollama_updated_at", in: "photo_metadata") {
             sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_updated_at REAL;", nil, nil, nil)
         }
+        if !columnExists("ollama_error_count", in: "photo_metadata") {
+            sqlite3_exec(database, "ALTER TABLE photo_metadata ADD COLUMN ollama_error_count INTEGER NOT NULL DEFAULT 0;", nil, nil, nil)
+        }
         if !columnExists("person_id", in: "detected_faces") {
             sqlite3_exec(database, "ALTER TABLE detected_faces ADD COLUMN person_id TEXT;", nil, nil, nil)
         }
@@ -742,7 +778,7 @@ final class PhotoMetadataCache {
 
     private func write(_ metadata: PhotoMetadata, identifier: String, modificationTime: Double, width: Int, height: Int) {
         guard let database else { return }
-        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, file_type = excluded.file_type, file_size = excluded.file_size, pixel_size = excluded.pixel_size, creation_date = excluded.creation_date, camera = excluded.camera, lens = excluded.lens, exposure = excluded.exposure, iso = excluded.iso, focal_length = excluded.focal_length, location = excluded.location, metadata_updated_at = excluded.metadata_updated_at;"
+        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, camera, lens, exposure, iso, focal_length, location, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET ollama_error_count = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN photo_metadata.ollama_error_count ELSE 0 END, modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, file_type = excluded.file_type, file_size = excluded.file_size, pixel_size = excluded.pixel_size, creation_date = excluded.creation_date, camera = excluded.camera, lens = excluded.lens, exposure = excluded.exposure, iso = excluded.iso, focal_length = excluded.focal_length, location = excluded.location, metadata_updated_at = excluded.metadata_updated_at;"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }
@@ -779,6 +815,33 @@ final class PhotoMetadataCache {
         sqlite3_bind_int(statement, 4, Int32(height))
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return text(from: statement, at: 0)
+    }
+
+    private func readOllamaFailureCount(identifier: String, modificationTime: Double, width: Int, height: Int) -> Int {
+        guard let database else { return 0 }
+        let sql = "SELECT ollama_error_count FROM photo_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? LIMIT 1;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(statement) }
+        bindText(identifier, to: statement, at: 1)
+        sqlite3_bind_double(statement, 2, modificationTime)
+        sqlite3_bind_int(statement, 3, Int32(width))
+        sqlite3_bind_int(statement, 4, Int32(height))
+        guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+        return Int(sqlite3_column_int(statement, 0))
+    }
+
+    private func incrementOllamaFailureCount(identifier: String, modificationTime: Double, width: Int, height: Int) -> Bool {
+        guard let database else { return false }
+        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_size, pixel_size, creation_date, ollama_error_count) VALUES (?, ?, ?, ?, '', '', '', 1) ON CONFLICT(asset_id) DO UPDATE SET ollama_error_count = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN COALESCE(photo_metadata.ollama_error_count, 0) + 1 ELSE 1 END, ollama_text = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN photo_metadata.ollama_text ELSE NULL END, ollama_model = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN photo_metadata.ollama_model ELSE NULL END, ollama_updated_at = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN photo_metadata.ollama_updated_at ELSE NULL END, modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        bindText(identifier, to: statement, at: 1)
+        sqlite3_bind_double(statement, 2, modificationTime)
+        sqlite3_bind_int(statement, 3, Int32(width))
+        sqlite3_bind_int(statement, 4, Int32(height))
+        return sqlite3_step(statement) == SQLITE_DONE
     }
 
     private func readFaceDetectionResult(
@@ -1133,7 +1196,7 @@ final class PhotoMetadataCache {
 
     private func writeOllamaText(_ text: String, model: String, identifier: String, modificationTime: Double, width: Int, height: Int) {
         guard let database else { return }
-        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, ollama_text, ollama_model, ollama_updated_at) VALUES (?, ?, ?, ?, '', '', '', '', ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, ollama_text = excluded.ollama_text, ollama_model = excluded.ollama_model, ollama_updated_at = excluded.ollama_updated_at;"
+        let sql = "INSERT INTO photo_metadata (asset_id, modification_time, pixel_width, pixel_height, file_type, file_size, pixel_size, creation_date, ollama_text, ollama_model, ollama_updated_at) VALUES (?, ?, ?, ?, '', '', '', '', ?, ?, ?) ON CONFLICT(asset_id) DO UPDATE SET ollama_error_count = CASE WHEN photo_metadata.modification_time = excluded.modification_time AND photo_metadata.pixel_width = excluded.pixel_width AND photo_metadata.pixel_height = excluded.pixel_height THEN photo_metadata.ollama_error_count ELSE 0 END, modification_time = excluded.modification_time, pixel_width = excluded.pixel_width, pixel_height = excluded.pixel_height, ollama_text = excluded.ollama_text, ollama_model = excluded.ollama_model, ollama_updated_at = excluded.ollama_updated_at;"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(statement) }

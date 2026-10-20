@@ -157,6 +157,7 @@ final class BatchRecognitionModel: ObservableObject {
                 if let processingStartedAt {
                     recordProcessingTime(since: processingStartedAt)
                 }
+                PhotoMetadataCache.shared.recordOllamaFailure(for: asset)
                 failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
             }
         }

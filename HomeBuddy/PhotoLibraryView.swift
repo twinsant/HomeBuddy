@@ -277,6 +277,7 @@ private struct PhotoThumbnailView: View {
     let asset: LibraryAsset
     @State private var image: Image?
     @State private var loadError: String?
+    @State private var ollamaFailureCount = 0
 
     var body: some View {
         Group {
@@ -296,6 +297,8 @@ private struct PhotoThumbnailView: View {
         .task(id: asset.revisionID) {
             image = nil
             loadError = nil
+            ollamaFailureCount = 0
+            PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
             let options = PHImageRequestOptions()
             options.deliveryMode = .opportunistic
             options.resizeMode = .fast
@@ -316,6 +319,19 @@ private struct PhotoThumbnailView: View {
                     image = Image(nsImage: nsImage)
                 }
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            if ollamaFailureCount > 3 {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white, .orange)
+                    .padding(7)
+                    .help("Ollama 识图失败 \(ollamaFailureCount) 次")
+                    .accessibilityLabel("Ollama 识图失败 \(ollamaFailureCount) 次")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
+            PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
         }
     }
 }
@@ -382,6 +398,12 @@ private struct LivePhotoPlayer: NSViewRepresentable {
 }
 
 private struct PhotoViewerView: View {
+    private struct FaceSelection: Identifiable {
+        let id = UUID()
+        let index: Int
+        let asset: LibraryAsset
+    }
+
     let assets: [LibraryAsset]
     let initialIndex: Int
     let onBack: (String) -> Void
@@ -418,8 +440,7 @@ private struct PhotoViewerView: View {
     @State private var recognitionFailed = false
     @State private var people: [Person] = []
     @State private var mostLabeledPeople: [PersonFaceCount] = []
-    @State private var selectedFaceIndex: Int?
-    @State private var isShowingPersonAssignment = false
+    @State private var selectedFace: FaceSelection?
     @State private var isOllamaAnalyzing = false
     @State private var zoomScale: CGFloat = 1
     @GestureState private var gestureScale: CGFloat = 1
@@ -531,8 +552,7 @@ private struct PhotoViewerView: View {
                                     faces: detectedFaces,
                                     personNames: Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0.displayName) })
                                 ) { index in
-                                    selectedFaceIndex = index
-                                    isShowingPersonAssignment = true
+                                    selectedFace = FaceSelection(index: index, asset: currentAsset)
                                     refreshMostLabeledPeople()
                                 }
                             }
@@ -636,18 +656,19 @@ private struct PhotoViewerView: View {
             invalidateRecognition()
             resetLivePhoto()
         }
-        .sheet(isPresented: $isShowingPersonAssignment, onDismiss: { selectedFaceIndex = nil }) {
+        .sheet(item: $selectedFace) { selection in
             PersonAssignmentSheet(
                 people: people,
-                mostLabeledPeople: mostLabeledPeople,
-                currentPersonID: selectedFaceIndex.flatMap { index in
-                    detectedFaces.indices.contains(index) ? detectedFaces[index].personID : nil
+                mostLabeledPeople: $mostLabeledPeople,
+                faces: $detectedFaces,
+                faceIndex: selection.index,
+                isRecognizingFaces: $isRecognizingFaces,
+                onAssign: { personID in
+                    assignPerson(personID, faceIndex: selection.index, asset: selection.asset)
                 },
-                candidate: selectedFaceIndex.flatMap { index in
-                    detectedFaces.indices.contains(index) ? detectedFaces[index].candidate : nil
-                },
-                onAssign: { personID in assignPerson(personID) },
-                onCreate: assignNewPerson
+                onCreate: { name in
+                    assignNewPerson(named: name, faceIndex: selection.index, asset: selection.asset)
+                }
             )
         }
         .toolbar {
@@ -901,8 +922,7 @@ private struct PhotoViewerView: View {
         hasLoadedFaceData = false
         hasLoadedPeople = false
         recognitionAttemptedAssetID = nil
-        selectedFaceIndex = nil
-        isShowingPersonAssignment = false
+        selectedFace = nil
         isAnalyzing = false
         isOllamaAnalyzing = false
 
@@ -1044,21 +1064,20 @@ private struct PhotoViewerView: View {
 
     private func assignPerson(
         _ personID: String?,
-        faceIndex explicitFaceIndex: Int? = nil,
-        asset explicitAsset: LibraryAsset? = nil
+        faceIndex: Int,
+        asset: LibraryAsset
     ) {
-        guard let faceIndex = explicitFaceIndex ?? selectedFaceIndex,
+        guard currentAsset.revisionID == asset.revisionID,
               detectedFaces.indices.contains(faceIndex)
         else { return }
 
         invalidateRecognition()
         let generation = photoGeneration
         let previous = detectedFaces[faceIndex].personID
-        let asset = explicitAsset ?? currentAsset
         let assetID = asset.localIdentifier
         let face = detectedFaces[faceIndex]
         detectedFaces[faceIndex] = DetectedFace(box: face.box, personID: personID, candidate: nil)
-        isShowingPersonAssignment = false
+        selectedFace = nil
         PhotoMetadataCache.shared.saveFacePersonID(personID, faceIndex: faceIndex, for: asset) { succeeded in
             guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
             if !succeeded, detectedFaces.indices.contains(faceIndex) {
@@ -1096,14 +1115,12 @@ private struct PhotoViewerView: View {
         }
     }
 
-    private func assignNewPerson(named name: String) {
-        guard let faceIndex = selectedFaceIndex else { return }
-        let asset = currentAsset
-        let assetID = asset.localIdentifier
+    private func assignNewPerson(named name: String, faceIndex: Int, asset: LibraryAsset) {
+        guard currentAsset.revisionID == asset.revisionID else { return }
         PhotoMetadataCache.shared.savePerson(named: name) { person in
             guard let person else { return }
             if !people.contains(where: { $0.id == person.id }) { people.append(person) }
-            guard currentAsset.localIdentifier == assetID else { return }
+            guard currentAsset.revisionID == asset.revisionID else { return }
             assignPerson(person.id, faceIndex: faceIndex, asset: asset)
         }
     }
@@ -1388,6 +1405,7 @@ private struct PhotoViewerView: View {
                 analysisResult = VisionAnalysisResult(title: "Ollama 图片识别结果", message: text)
             } catch {
                 guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
+                PhotoMetadataCache.shared.recordOllamaFailure(for: asset)
                 isOllamaAnalyzing = false
                 analysisResult = VisionAnalysisResult(
                     title: "Ollama 识别失败",
@@ -1710,14 +1728,23 @@ enum FaceCandidateRanking {
 
 private struct PersonAssignmentSheet: View {
     let people: [Person]
-    let mostLabeledPeople: [PersonFaceCount]
-    let currentPersonID: String?
-    let candidate: FacePersonCandidate?
+    @Binding var mostLabeledPeople: [PersonFaceCount]
+    @Binding var faces: [DetectedFace]
+    let faceIndex: Int
+    @Binding var isRecognizingFaces: Bool
     let onAssign: (String?) -> Void
     let onCreate: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPersonID: String?
     @State private var newPersonName = ""
+
+    private var currentPersonID: String? {
+        faces.indices.contains(faceIndex) ? faces[faceIndex].personID : nil
+    }
+
+    private var candidate: FacePersonCandidate? {
+        faces.indices.contains(faceIndex) ? faces[faceIndex].candidate : nil
+    }
 
     private var uniquePeople: [Person] {
         var seenNames = Set<String>()
@@ -1768,6 +1795,13 @@ private struct PersonAssignmentSheet: View {
                     Label("确认是 \(candidate.displayName)（相似度 \(candidate.similarityPercent)%）", systemImage: "checkmark.circle")
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("confirmFaceCandidate")
+            } else if isRecognizingFaces {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("正在查询可能人物…")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Divider()
