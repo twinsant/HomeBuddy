@@ -1,0 +1,107 @@
+require "shellwords"
+
+default_platform(:mac)
+
+REPO_ROOT = File.expand_path("..", __dir__)
+PROJECT_PATH = File.join(REPO_ROOT, "HomeBuddy.xcodeproj")
+ARTIFACTS_PATH = File.join(REPO_ROOT, "build", "mac-app-store")
+
+def required_release_env(name)
+  value = ENV[name].to_s.strip
+  UI.user_error!("Set #{name}; see fastlane/.env.example and doc/mac-app-store-release.md") if value.empty?
+  value
+end
+
+platform :mac do
+  desc "Run the HomeBuddy test suite on this Mac"
+  lane :test do
+    run_tests(
+      project: PROJECT_PATH,
+      scheme: "HomeBuddy",
+      destination: "platform=macOS",
+      output_directory: File.join(REPO_ROOT, "build", "test-results")
+    )
+  end
+
+  desc "Archive Release and export a signed Mac App Store pkg (no upload)"
+  lane :build do
+    team = required_release_env("APPLE_TEAM_ID")
+    number = required_release_env("BUILD_NUMBER")
+    UI.user_error!("BUILD_NUMBER must be a positive integer") unless number.match?(/\A[1-9]\d*\z/)
+    UI.user_error!("APPLE_TEAM_ID must be a 10-character team identifier") unless team.match?(/\A[A-Z0-9]{10}\z/)
+
+    settings = {
+      "DEVELOPMENT_TEAM" => team,
+      "CURRENT_PROJECT_VERSION" => number,
+      "CODE_SIGN_STYLE" => "Automatic",
+      "ONLY_ACTIVE_ARCH" => "NO"
+    }
+    version = ENV["APP_VERSION"].to_s.strip
+    unless version.empty?
+      UI.user_error!("APP_VERSION must be a numeric version, e.g. 1.0.0") unless version.match?(/\A\d+(?:\.\d+){0,2}\z/)
+      settings["MARKETING_VERSION"] = version
+    end
+    # Override only this archive, without rewriting project.pbxproj or Info.plist.
+    arguments = settings.map { |key, value| "#{key}=#{value}".shellescape }.join(" ")
+    provisioning = ENV["ALLOW_PROVISIONING_UPDATES"] == "true" ? "-allowProvisioningUpdates" : ""
+
+    build_mac_app(
+      project: PROJECT_PATH,
+      scheme: "HomeBuddy",
+      configuration: "Release",
+      destination: "generic/platform=macOS",
+      clean: true,
+      archive_path: File.join(ARTIFACTS_PATH, "HomeBuddy.xcarchive"),
+      output_directory: ARTIFACTS_PATH,
+      output_name: "HomeBuddy",
+      buildlog_path: File.join(ARTIFACTS_PATH, "logs"),
+      # fastlane 2.238.0 uses this spelling for App Store Connect exports.
+      export_method: "app-store",
+      export_team_id: team,
+      export_options: {
+        signingStyle: "automatic",
+        teamID: team,
+        destination: "export",
+        manageAppVersionAndBuildNumber: false
+      },
+      skip_package_pkg: false,
+      xcargs: [arguments, provisioning].reject(&:empty?).join(" "),
+      export_xcargs: provisioning
+    )
+    package = File.join(ARTIFACTS_PATH, "HomeBuddy.pkg")
+    UI.user_error!("Export did not produce #{package}") unless File.file?(package)
+    UI.success("Mac App Store package: #{package}")
+  end
+
+  desc "Upload an explicitly selected pkg; do not submit for review or release"
+  lane :upload do |options|
+    path = options[:pkg].to_s.strip
+    UI.user_error!("Pass pkg:build/mac-app-store/HomeBuddy.pkg explicitly") if path.empty?
+    package = File.expand_path(path, REPO_ROOT)
+    UI.user_error!("pkg must point to an existing .pkg file") unless File.file?(package) && File.extname(package) == ".pkg"
+
+    key_id = required_release_env("ASC_KEY_ID")
+    issuer_id = required_release_env("ASC_ISSUER_ID")
+    key_file = File.expand_path(required_release_env("ASC_KEY_FILEPATH"), REPO_ROOT)
+    UI.user_error!("ASC_KEY_FILEPATH must point to an existing .p8 file") unless File.file?(key_file) && File.extname(key_file) == ".p8"
+    api_key = app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_filepath: key_file,
+      in_house: false
+    )
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: "com.twinsant.HomeBuddy",
+      platform: "osx",
+      pkg: package,
+      skip_metadata: true,
+      skip_screenshots: true,
+      skip_app_version_update: true,
+      submit_for_review: false,
+      automatic_release: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+end

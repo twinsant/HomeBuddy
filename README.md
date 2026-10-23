@@ -24,7 +24,7 @@ HomeBuddy 是一款 macOS 照片整理工具：浏览系统照片图库、缓存
 - 可选图片描述：已运行的 [Ollama](https://ollama.com/)，以及支持图片输入的视觉模型
 - 可选人物向量索引：已运行的 [Chroma](https://www.trychroma.com/) HTTP 服务
 
-项目当前没有独立的包管理器依赖；原生依赖以 `HomeBuddy/Native/lib/` 中的静态库形式提交。
+应用当前没有独立的包管理器依赖；原生依赖以 `HomeBuddy/Native/lib/` 中的静态库形式提交。发布工具使用 Bundler 管理 fastlane。
 
 ## 构建和运行
 
@@ -42,6 +42,10 @@ HomeBuddy 是一款 macOS 照片整理工具：浏览系统照片图库、缓存
 - Chroma：`http://localhost:8000`
 
 项目允许手动填写服务地址。将服务配置为远端时，应使用 HTTPS、认证和受限网络访问；当前客户端不会自动替你完成这些安全措施。
+
+## Mac App Store 发布
+
+已提供 fastlane 的 `mac test`、`mac build` 和 `mac upload` 流程。签名、环境变量、命令及提交前检查见 [Mac App Store 发布指南](doc/mac-app-store-release.md)。上传不会自动提交审核或发布。
 
 ## 数据和隐私
 

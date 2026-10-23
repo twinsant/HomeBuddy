@@ -24,7 +24,7 @@ HomeBuddy is a macOS photo organization tool. It browses the system Photos libra
 - Optional image descriptions: a running [Ollama](https://ollama.com/) instance and a vision-capable model
 - Optional face-vector indexing: a running [Chroma](https://www.trychroma.com/) HTTP service
 
-The project currently has no separate package-manager dependencies. Native dependencies are committed as static libraries under `HomeBuddy/Native/lib/`.
+The app has no separate package-manager dependencies. Native dependencies are committed as static libraries under `HomeBuddy/Native/lib/`. Release tooling uses Bundler to manage fastlane.
 
 ## Build and Run
 
@@ -42,6 +42,10 @@ Default service addresses:
 - Chroma: `http://localhost:8000`
 
 The app accepts manually entered service addresses. For remote services, use HTTPS, authentication, and restricted network access; the current client does not provide these protections automatically.
+
+## Mac App Store Release
+
+The fastlane configuration provides `mac test`, `mac build`, and `mac upload` lanes. See the [release guide (Chinese)](doc/mac-app-store-release.md) for signing, environment variables, commands, and the pre-submission checklist. Uploading does not submit the app for review or release it automatically.
 
 ## Data and Privacy
 

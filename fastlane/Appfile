@@ -1,0 +1,2 @@
+app_identifier("com.twinsant.HomeBuddy")
+team_id(ENV["APPLE_TEAM_ID"]) unless ENV["APPLE_TEAM_ID"].to_s.empty?

@@ -16,3 +16,20 @@ xcuserdata/
 .env.*
 *.p12
 *.key
+*.p8
+*.mobileprovision
+*.provisionprofile
+!fastlane/.env.example
+
+# Release tooling and generated artifacts (commit Gemfile.lock)
+/.bundle/
+/vendor/bundle/
+/build/
+/DerivedData/
+*.xcarchive
+*.pkg
+*.dSYM.zip
+/fastlane/report.xml
+/fastlane/Preview.html
+/fastlane/test_output/
+/fastlane/readme.md
