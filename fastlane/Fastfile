@@ -163,6 +163,26 @@ platform :mac do
     )
   end
 
+  desc "Create and install the Mac App Store certificates (Apple Distribution + Mac Installer Distribution)"
+  lane :certs do
+    key = asc_api_key
+    # Signs HomeBuddy.app for the Mac App Store.
+    cert(api_key: key, generate_apple_certs: true)
+    # Signs the .pkg installer.
+    cert(api_key: key, type: "mac_installer_distribution")
+    UI.success("Certificates installed. Next: bundle exec fastlane mac provision, then mac build")
+  end
+
+  desc "Create and install the Mac App Store provisioning profile"
+  lane :provision do
+    sigh(
+      api_key: asc_api_key,
+      app_identifier: "com.twinsant.HomeBuddy",
+      platform: "macos"
+    )
+    UI.success("Mac App Store provisioning profile installed")
+  end
+
   desc "Upload screenshots for every locale; needs an editable version in App Store Connect"
   lane :screenshots do
     upload_to_app_store(

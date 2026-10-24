@@ -30,6 +30,36 @@ bundle exec fastlane lanes
 5. 当前流程沿用项目的 Automatic signing。默认不允许自动申请或更新签名资源；需要时显式设置 `ALLOW_PROVISIONING_UPDATES=true`，并确保 Xcode 已登录有权限的账号。上传 API Key 不会自动安装证书，也不等价于 Xcode 签名登录；CI 需要单独安全导入证书、描述文件并配置钥匙串。
 6. 在干净检出/CI 使用前，确认 `HomeBuddy` scheme 可被命令行发现并包含测试和 Release Archive 配置。当前 Xcode 将其报告为 Shared，但仓库没有实体 `.xcscheme` 文件；建议在 Xcode 的 Manage Schemes 中保存共享 scheme，并提交 `HomeBuddy.xcodeproj/xcshareddata/xcschemes/`，不要依赖 `xcuserdata` 或自动生成状态。
 
+### 2.1 用 fastlane 生成证书（可选路径）
+
+证书可以让 fastlane 直接创建并装进钥匙串，不必在 Xcode 里手点。
+
+```sh
+# 需要先填好 ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_FILEPATH
+bundle exec fastlane mac certs       # Apple Distribution + Mac Installer Distribution
+bundle exec fastlane mac provision   # Mac App Store 描述文件
+```
+
+`mac certs` 会做两件事：创建 Apple Distribution（给 `HomeBuddy.app` 签名）和 Mac Installer Distribution（给 `.pkg` 签名），私钥与 CSR 由 fastlane 生成，证书直接导入默认钥匙串。
+
+前提与限制：
+
+- **API Key 角色**：密钥所属账号需要有管理证书的权限（Admin 或 App Manager）。Developer 角色只能上传构建，创建证书会被拒绝。
+- **钥匙串**：导入时会写默认钥匙串，可能弹出一次系统授权；CI 上要单独解锁临时钥匙串。
+- **证书数量上限**：每个团队每种分发证书有数量上限。已有两张时再创建会失败，先确认是否有闲置证书，不要随手 `force` 吊销。
+- **主体**：证书绑定的是账号，不是这台机器。换机器需要导出 `.p12` 并连同私钥一起搬过去，或者重新走一次 `mac certs`。
+
+不想用 fastlane 也可以走图形界面：Xcode → Settings → Accounts → 选团队 → Manage Certificates → ＋ → Apple Distribution，再点一次 ＋ → Mac Installer Distribution。
+
+描述文件同样可以交给 xcodebuild 自动创建。证书装好之后：
+
+```sh
+APPLE_TEAM_ID=XXXXXXXXXX BUILD_NUMBER=1 ALLOW_PROVISIONING_UPDATES=true \
+  bundle exec fastlane mac build
+```
+
+`ALLOW_PROVISIONING_UPDATES=true` 会允许 xcodebuild 在签名时补建 Mac App Store 描述文件，适合第一次跑通的场景；CI 上仍然建议把描述文件固化下来。
+
 ## 3. 测试、打包、上传
 
 ```sh
