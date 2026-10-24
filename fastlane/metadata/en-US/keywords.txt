@@ -1,0 +1,1 @@
+ai,library,manager,tagging,people,text,exif,metadata,album,catalog,offline,privacy,scan

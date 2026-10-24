@@ -1,0 +1,34 @@
+HomeBuddy is a photo organizer for macOS. It opens the library you already have, tells you what is inside each file, and helps you find a photo again without scrolling.
+It is a one-time purchase. No subscription, no account, no upload.
+
+WHAT YOU GET
+- System Photo Library, smart albums, and your own albums
+- Any folder of photos on disk, browsed as a library
+- Sizes, formats, capture time, camera, lens, exposure, ISO, focal length
+- A local cache, so the same metadata does not get read twice
+
+FACES, NAMED ONCE
+- Face detection runs on your Mac with a local model
+- Give a person a name and HomeBuddy remembers the match
+- Look for the same face across the whole library
+
+SEARCH THE TEXT INSIDE PHOTOS
+- Optional: connect Ollama with a vision model, and HomeBuddy describes photos one at a time or in a batch
+- Descriptions are stored locally, so you can search by any word that appeared in a photo
+- Nothing leaves your Mac unless you configure a remote endpoint yourself
+
+PRIVATE BY DESIGN
+- Keeps the metadata cache on your Mac
+- Runs face detection locally
+- The optional services are the ones you host: point HomeBuddy at your own Ollama or Chroma address
+
+BRING YOUR OWN MODEL
+HomeBuddy does not ship a face model. In Settings, pick an antelopev2.gguf compatible model file and a folder for the metadata database. Without a model, browsing, albums, metadata, folders, and text search all still work.
+
+REQUIREMENTS
+- macOS 26.5 or later
+- Photo Library access
+- Ollama with a vision model (optional, for photo descriptions)
+- Chroma (optional, for face vector search)
+
+HomeBuddy is early software. It reads and indexes well; cache cleanup and syncing deletions to remote services are still being built.

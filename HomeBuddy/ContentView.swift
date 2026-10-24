@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var batchFaceRecognitionModel: BatchFaceRecognitionModel?
     @State private var recognitionRevision = 0
     @State private var databaseRevision = 0
+    @State private var faceModelReady = FaceRecognitionConfiguration.modelURL() != nil
 
     var body: some View {
         NavigationSplitView {
@@ -40,18 +41,13 @@ struct ContentView: View {
             .navigationTitle("照片相册")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } detail: {
-            if let selectedDirectory {
-                DiskPhotoLibraryView(directory: selectedDirectory, revision: diskLibrary.revision,
-                                     isScanning: diskLibrary.scanningIDs.contains(selectedDirectory.id))
-                    .id("\(selectedDirectory.id):\(databaseRevision)")
-            } else if let selectedAlbum {
-                PhotoLibraryView(
-                    album: selectedAlbum,
-                    assets: libraryAssets(for: selectedAlbum, revision: recognitionRevision)
+            VStack(spacing: 0) {
+                SetupNotice(
+                    needsPhotoAccess: !hasPhotoAccess,
+                    needsFaceModel: !faceModelReady,
+                    openPhotoSettings: openPhotoSettings
                 )
-                    .id("\(selectedAlbum.id):\(databaseRevision)")
-            } else {
-                ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
+                detailContent
             }
         }
         .toolbar {
@@ -111,9 +107,10 @@ struct ContentView: View {
                         )
                     }
                 }
-                .disabled((selectedDirectory == nil && selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
+                .disabled(!faceModelReady
+                          || (selectedDirectory == nil && selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
-                .help("打开批量人脸识别任务")
+                .help(faceModelReady ? "打开批量人脸识别任务" : "先在设置里选择人脸模型文件")
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -143,6 +140,9 @@ struct ContentView: View {
             await diskLibrary.reload()
             photoLibrary.requestAccessAndLoad()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            faceModelReady = FaceRecognitionConfiguration.modelURL() != nil
+        }
         .onChange(of: photoLibrary.albums) { _, _ in repairSelection() }
         .onChange(of: diskLibrary.directories) { _, _ in repairSelection() }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyDatabaseDidChange"))) { _ in
@@ -166,6 +166,25 @@ struct ContentView: View {
             Button("确定", role: .cancel) { diskLibrary.errorMessage = nil }
         } message: {
             Text(diskLibrary.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if let selectedDirectory {
+            DiskPhotoLibraryView(directory: selectedDirectory, revision: diskLibrary.revision,
+                                 isScanning: diskLibrary.scanningIDs.contains(selectedDirectory.id))
+                .id("\(selectedDirectory.id):\(databaseRevision)")
+        } else if let selectedAlbum {
+            PhotoLibraryView(
+                album: selectedAlbum,
+                assets: libraryAssets(for: selectedAlbum, revision: recognitionRevision)
+            )
+                .id("\(selectedAlbum.id):\(databaseRevision)")
+        } else if !hasPhotoAccess && diskLibrary.directories.isEmpty {
+            PhotoPermissionView(openSettings: openPhotoSettings)
+        } else {
+            ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
         }
     }
 

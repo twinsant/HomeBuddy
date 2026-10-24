@@ -1,0 +1,8 @@
+HomeBuddy organizes the user's own photo library on macOS.
+
+1. No account, no login, no in-app purchase. Price is one-time.
+2. Core features work with no external setup: browse the system Photo Library, albums and any folder on disk; read metadata.
+3. Face detection needs a local model file the user supplies. The app does not bundle or download model weights. In Settings, pick an antelopev2.gguf compatible .gguf file and a folder for the metadata database. The bundled repository and the app contain no model weights.
+4. Ollama (optional, for photo descriptions) and Chroma (optional, for face vector search) are services the user runs locally. The app defaults to http://127.0.0.1:11434 and http://localhost:8000 and only contacts them after the user saves the address in Settings.
+5. Reviewer steps without any model or service: launch, grant Photo Library access, browse albums, open a photo to see metadata. All of this is offline.
+6. Screenshots use synthetic images only. No personal photos, no local file paths.

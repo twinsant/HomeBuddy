@@ -63,7 +63,45 @@ codesign -d --entitlements :- build/mac-app-store/HomeBuddy.xcarchive/Products/A
 
 为密钥授予上传本应用所需的最小角色权限。上传不会覆盖商店文案、截图或版本资料；完成后到 App Store Connect 等待处理、核对构建和版本信息、填写合规资料，再手动选择构建并提交审核。上传成功不等于处理或审核成功。
 
-## 4. 首次提交前的阻塞项与验收清单
+## 4. 商店文案与截图
+
+商店页内容不写在 App Store Connect 网页里，写在这个仓库里，由 fastlane 推上去。
+
+```
+fastlane/metadata/en-US/        名称、副标题、关键词、描述、促销文字、发布说明、三个 URL、版权
+fastlane/metadata/zh-Hans/      同一套中文
+fastlane/metadata/review_information/notes.txt   审核备注
+fastlane/screenshots/en-US/     截图（目前为空，规格见 screenshots/README.md）
+fastlane/screenshots/zh-Hans/
+```
+
+文案定稿见 [Mac App Store ASO](aso-mac-app-store.md)，改文案改这里的数据文件，两边要一致。
+
+```sh
+# 只做本地校验：字符上限、缺文件，不联网
+bundle exec fastlane mac check_metadata
+
+# 只推文案，不动二进制和截图
+bundle exec fastlane mac metadata
+
+# 只推截图
+bundle exec fastlane mac screenshots
+
+# 只推二进制（原有流程，跳过文案和截图）
+bundle exec fastlane mac upload pkg:build/mac-app-store/HomeBuddy.pkg
+```
+
+**前置条件**：App Store Connect 里必须已经有一个可编辑状态的版本（Prepare for Submission）。三个 lane 都带 `skip_app_version_update: true`，不会替你创建版本，没有可编辑版本时推送会失败。
+
+**API Key 角色**：上传二进制和修改商店文案都要求密钥所属账号有 App Manager 或 Admin 权限。只有 Developer 角色的密钥能上传构建，但改不了文案。
+
+**metadata 管不到的东西**，仍然要手动填：价格（$0.99）、分类、年龄分级、隐私标签、出口合规、审核联系方式。价格改动会触发重新审核，别在提交前临时改。
+
+**不要用 `deliver` 的自动截图上传去覆盖人工排版**：截图一旦上传，同名文件会被覆盖，确认素材再推。
+
+---
+
+## 5. 首次提交前的阻塞项与验收清单
 
 - [ ] 配置完整的商店应用图标与合适的 `LSApplicationCategoryType`；当前 Info.plist 尚未设置应用类别，图标资源也需人工核实。检查最终包中的 Bundle ID、版本、最低系统版本和沙盒签名。
 - [ ] 按实际用途核对隐私权限文案、ATS/本地网络访问配置。验收照片授权拒绝、模型与数据库目录选择、安全书签跨重启恢复及授权失效；核对持久化书签所需 entitlement，不扩大权限来绕过问题。

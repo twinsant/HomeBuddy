@@ -12,6 +12,19 @@ def required_release_env(name)
   value
 end
 
+def asc_api_key
+  key_id = required_release_env("ASC_KEY_ID")
+  issuer_id = required_release_env("ASC_ISSUER_ID")
+  key_file = File.expand_path(required_release_env("ASC_KEY_FILEPATH"), REPO_ROOT)
+  UI.user_error!("ASC_KEY_FILEPATH must point to an existing .p8 file") unless File.file?(key_file) && File.extname(key_file) == ".p8"
+  app_store_connect_api_key(
+    key_id: key_id,
+    issuer_id: issuer_id,
+    key_filepath: key_file,
+    in_house: false
+  )
+end
+
 platform :mac do
   desc "Run the HomeBuddy test suite on this Mac"
   lane :test do
@@ -81,16 +94,7 @@ platform :mac do
     package = File.expand_path(path, REPO_ROOT)
     UI.user_error!("pkg must point to an existing .pkg file") unless File.file?(package) && File.extname(package) == ".pkg"
 
-    key_id = required_release_env("ASC_KEY_ID")
-    issuer_id = required_release_env("ASC_ISSUER_ID")
-    key_file = File.expand_path(required_release_env("ASC_KEY_FILEPATH"), REPO_ROOT)
-    UI.user_error!("ASC_KEY_FILEPATH must point to an existing .p8 file") unless File.file?(key_file) && File.extname(key_file) == ".p8"
-    api_key = app_store_connect_api_key(
-      key_id: key_id,
-      issuer_id: issuer_id,
-      key_filepath: key_file,
-      in_house: false
-    )
+    api_key = asc_api_key
     upload_to_app_store(
       api_key: api_key,
       app_identifier: "com.twinsant.HomeBuddy",
@@ -99,6 +103,78 @@ platform :mac do
       skip_metadata: true,
       skip_screenshots: true,
       skip_app_version_update: true,
+      submit_for_review: false,
+      automatic_release: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+
+  desc "Check fastlane/metadata against App Store character limits; no network"
+  lane :check_metadata do
+    limits = {
+      "name.txt" => 30,
+      "subtitle.txt" => 30,
+      "keywords.txt" => 100,
+      "promotional_text.txt" => 170,
+      "description.txt" => 4000,
+      "release_notes.txt" => 4000
+    }
+    root = File.join(REPO_ROOT, "fastlane", "metadata")
+    UI.user_error!("Missing #{root}") unless File.directory?(root)
+    problems = []
+    Dir[File.join(root, "*")].select { |path| File.directory?(path) }.sort.each do |dir|
+      locale = File.basename(dir)
+      next if locale == "review_information"
+      limits.each do |file, limit|
+        path = File.join(dir, file)
+        unless File.file?(path)
+          UI.important("#{locale}/#{file}: missing")
+          next
+        end
+        length = File.read(path).strip.length
+        if length > limit
+          problems << "#{locale}/#{file} #{length}/#{limit}"
+          UI.error("#{locale}/#{file}: #{length}/#{limit}")
+        else
+          UI.message("#{locale}/#{file}: #{length}/#{limit}")
+        end
+      end
+    end
+    UI.user_error!("Over limit:\n#{problems.join("\n")}") unless problems.empty?
+    UI.success("All metadata within limits")
+  end
+
+  desc "Upload store copy for every locale; no binary, no screenshots"
+  lane :metadata do
+    upload_to_app_store(
+      api_key: asc_api_key,
+      app_identifier: "com.twinsant.HomeBuddy",
+      platform: "osx",
+      metadata_path: File.join(REPO_ROOT, "fastlane", "metadata"),
+      screenshots_path: File.join(REPO_ROOT, "fastlane", "screenshots"),
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_app_version_update: true,
+      submit_for_review: false,
+      automatic_release: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+
+  desc "Upload screenshots for every locale; needs an editable version in App Store Connect"
+  lane :screenshots do
+    upload_to_app_store(
+      api_key: asc_api_key,
+      app_identifier: "com.twinsant.HomeBuddy",
+      platform: "osx",
+      metadata_path: File.join(REPO_ROOT, "fastlane", "metadata"),
+      screenshots_path: File.join(REPO_ROOT, "fastlane", "screenshots"),
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_app_version_update: true,
+      overwrite_screenshots: true,
       submit_for_review: false,
       automatic_release: false,
       run_precheck_before_submit: false,
