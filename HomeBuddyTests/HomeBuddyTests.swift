@@ -259,4 +259,56 @@ struct HomeBuddyTests {
         #expect(ranked() == ["p2:3", "p1:1", "p3:1", "p4:1", "p5:1"])
     }
 
+    @Test func personAlbumSummariesSeparateConfirmedAndPotentialPhotos() {
+        var database: OpaquePointer?
+        #expect(sqlite3_open(":memory:", &database) == SQLITE_OK)
+        defer { sqlite3_close(database) }
+
+        let fixture = """
+            CREATE TABLE people (person_id TEXT, display_name TEXT);
+            CREATE TABLE face_detection_results (
+                id INTEGER, asset_id TEXT, modification_time REAL, detector_version TEXT, detected_at REAL
+            );
+            CREATE TABLE detected_faces (
+                result_id INTEGER, face_index INTEGER, person_id TEXT, candidate_person_id TEXT,
+                x REAL, y REAL, width REAL, height REAL
+            );
+            INSERT INTO people VALUES ('p1', 'Alice'), ('p2', 'Bob');
+            INSERT INTO face_detection_results VALUES
+                (1, 'photo1', 1, 'facedetect-antelopev2-1', 1),
+                (2, 'photo2', 1, 'facedetect-antelopev2-1', 2),
+                (3, 'photo1', 2, 'facedetect-antelopev2-1', 3);
+            INSERT INTO detected_faces VALUES
+                (1, 0, 'p1', NULL, 0.1, 0.2, 0.3, 0.4),
+                (1, 1, NULL, 'p2', 0.2, 0.3, 0.2, 0.3),
+                (2, 0, 'p2', NULL, 0.3, 0.4, 0.2, 0.2),
+                (3, 0, NULL, 'p1', 0.1, 0.2, 0.3, 0.4),
+                (3, 1, NULL, 'p2', 0.2, 0.3, 0.2, 0.3);
+            """
+        #expect(sqlite3_exec(database, fixture, nil, nil, nil) == SQLITE_OK)
+
+        var statement: OpaquePointer?
+        #expect(sqlite3_prepare_v2(database, PhotoMetadataCache.personAlbumSummarySQL,
+                                   -1, &statement, nil) == SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+
+        var summaries: [String: (recognized: Int, potential: Int, avatarAsset: String)] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = sqlite3_column_text(statement, 0),
+                  let avatar = sqlite3_column_text(statement, 4) else { continue }
+            summaries[String(cString: id)] = (
+                Int(sqlite3_column_int(statement, 2)),
+                Int(sqlite3_column_int(statement, 3)),
+                String(cString: avatar)
+            )
+        }
+
+        #expect(summaries["p1"]?.recognized == 0)
+        #expect(summaries["p1"]?.potential == 1)
+        #expect(summaries["p1"]?.avatarAsset == "photo1")
+        #expect(summaries["p2"]?.recognized == 1)
+        #expect(summaries["p2"]?.potential == 1)
+        #expect(summaries["p2"]?.avatarAsset == "photo2")
+    }
+
 }

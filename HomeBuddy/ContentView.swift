@@ -26,6 +26,7 @@ struct ContentView: View {
         NavigationSplitView {
             PhotoSidebarView(
                 albums: photoLibrary.albums,
+                photoCounts: photoLibrary.photoCounts,
                 diskLibrary: diskLibrary,
                 selectedAlbumID: $selectedAlbumID,
                 hasPhotoAccess: hasPhotoAccess,
@@ -281,11 +282,19 @@ private struct BatchFaceRecognitionToolbarIcon: View {
 private struct PhotoAlbumRow: View {
     let album: PhotoAlbum
     let isSelected: Bool
+    var photoCount: Int? = nil
 
     var body: some View {
         HStack {
             Image(systemName: album.icon)
             Text(album.title)
+            Spacer(minLength: 4)
+            if let photoCount {
+                Text("\(photoCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -316,6 +325,7 @@ private struct PhotoPermissionView: View {
 
 private struct PhotoSidebarView: View {
     let albums: [PhotoAlbum]
+    let photoCounts: [String: Int]
     @ObservedObject var diskLibrary: DiskLibraryStore
     @Binding var selectedAlbumID: String?
     let hasPhotoAccess: Bool
@@ -363,7 +373,11 @@ private struct PhotoSidebarView: View {
                 if hasPhotoAccess {
                     ForEach(albums.filter { !$0.isFaceAlbum }) { album in
                         Button { selectedAlbumID = album.id } label: {
-                            PhotoAlbumRow(album: album, isSelected: selectedAlbumID == album.id)
+                            PhotoAlbumRow(
+                                album: album,
+                                isSelected: selectedAlbumID == album.id,
+                                photoCount: photoCounts[album.id]
+                            )
                         }
                         .buttonStyle(.plain)
                     }

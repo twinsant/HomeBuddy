@@ -18,6 +18,8 @@ struct PhotoLibraryView: View {
     @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
+    @State private var personSummaries: [PersonAlbumSummary] = []
+    @State private var selectedPersonID: String?
 
     init(album: PhotoAlbum, assets: [LibraryAsset]) {
         self.album = album
@@ -36,8 +38,13 @@ struct PhotoLibraryView: View {
     }
 
     private var displayedAssets: [LibraryAsset] {
-        guard !searchKeywords.isEmpty, let searchResultIDs else { return assets }
-        return assets.filter { searchResultIDs.contains($0.localIdentifier) }
+        let personAssetIDs: Set<String>? = selectedPersonID.map { id in
+            personSummaries.first(where: { $0.person.id == id })?.assetIDs ?? []
+        }
+        return assets.filter { asset in
+            (personAssetIDs.map { $0.contains(asset.localIdentifier) } ?? true)
+                && (searchKeywords.isEmpty || searchResultIDs.map { $0.contains(asset.localIdentifier) } ?? true)
+        }
     }
 
     private var searchTaskID: String {
@@ -46,22 +53,37 @@ struct PhotoLibraryView: View {
         return "\(keywords)|\(assetIDs)"
     }
 
+    private var personSummaryTaskID: String {
+        "\(album.id):\(assets.map(\.revisionID).joined(separator: "\u{1F}"))"
+    }
+
     var body: some View {
         ScrollViewReader { scrollProxy in
             ZStack {
-                if displayedAssets.isEmpty {
-                    ContentUnavailableView(
-                        searchKeywords.isEmpty ? "“\(album.title)”中还没有照片" : "没有匹配的照片",
-                        systemImage: "photo.on.rectangle.angled",
-                        description: Text(
-                            searchKeywords.isEmpty
-                                ? "这个相册中暂时没有可显示的图片。"
-                                : "没有找到包含全部关键词的 Ollama 识别文字。"
-                        )
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if album.isFaceAlbum && !personSummaries.isEmpty {
+                            PersonFilterBar(
+                                summaries: personSummaries,
+                                assetsByID: Dictionary(uniqueKeysWithValues: assets.map { ($0.localIdentifier, $0) }),
+                                selectedPersonID: $selectedPersonID
+                            )
+                        }
+
+                        if displayedAssets.isEmpty {
+                            ContentUnavailableView(
+                                searchKeywords.isEmpty
+                                    ? (selectedPersonID == nil ? "“\(album.title)”中还没有照片" : "这个人物暂无匹配照片")
+                                    : "没有匹配的照片",
+                                systemImage: "photo.on.rectangle.angled",
+                                description: Text(
+                                    searchKeywords.isEmpty
+                                        ? "这个相册或人物暂时没有可显示的图片。"
+                                        : "没有找到同时符合人物筛选并包含全部关键词的照片。"
+                                )
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 220)
+                        } else {
                             if !searchKeywords.isEmpty {
                                 Text("找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
                                     .font(.caption)
@@ -90,11 +112,11 @@ struct PhotoLibraryView: View {
                             }
                             .frame(maxWidth: .infinity)
                         }
-                        .padding()
                     }
-                    .allowsHitTesting(selectedIndex == nil)
-                    .accessibilityHidden(selectedIndex != nil)
+                    .padding()
                 }
+                .allowsHitTesting(selectedIndex == nil)
+                .accessibilityHidden(selectedIndex != nil)
 
                 if let selectedIndex, viewerAssets.indices.contains(selectedIndex) {
                     PhotoViewerView(
@@ -130,6 +152,7 @@ struct PhotoLibraryView: View {
             if !viewerAssets.allSatisfy({ available.contains($0.revisionID) }) { selectedIndex = nil }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
+            if album.isFaceAlbum { loadPersonSummaries() }
             let keywords = searchKeywords
             guard !keywords.isEmpty else { return }
             PhotoMetadataCache.shared.assetIDs(matchingOllamaKeywords: keywords) { result in
@@ -148,6 +171,150 @@ struct PhotoLibraryView: View {
             PhotoMetadataCache.shared.assetIDs(matchingOllamaKeywords: keywords) { result in
                 guard searchKeywords == keywords else { return }
                 searchResultIDs = result
+            }
+        }
+        .task(id: personSummaryTaskID) {
+            if album.isFaceAlbum { loadPersonSummaries() }
+            else { personSummaries = []; selectedPersonID = nil }
+        }
+    }
+
+    private func loadPersonSummaries() {
+        PhotoMetadataCache.shared.personAlbumSummaries { summaries in
+            personSummaries = summaries
+            if let selectedPersonID, !summaries.contains(where: { $0.person.id == selectedPersonID }) {
+                self.selectedPersonID = nil
+            }
+        }
+    }
+}
+
+private struct PersonFilterBar: View {
+    let summaries: [PersonAlbumSummary]
+    let assetsByID: [String: LibraryAsset]
+    @Binding var selectedPersonID: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("按人物筛选")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 10) {
+                    Button {
+                        selectedPersonID = nil
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "person.2.fill")
+                                .font(.title2)
+                                .frame(width: 58, height: 58)
+                                .background(.quaternary, in: Circle())
+                            Text("全部")
+                                .font(.caption.weight(.medium))
+                            Text("人物")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 90)
+                        .padding(8)
+                        .background(selectedPersonID == nil ? Color.accentColor.opacity(0.12) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("显示全部人物照片")
+
+                    ForEach(summaries) { summary in
+                        Button {
+                            selectedPersonID = selectedPersonID == summary.person.id ? nil : summary.person.id
+                        } label: {
+                            VStack(spacing: 6) {
+                                PersonAlbumAvatar(
+                                    asset: summary.avatarAssetID.flatMap { assetsByID[$0] },
+                                    faceBox: summary.avatarFaceBox
+                                )
+                                Text(summary.person.displayName)
+                                    .font(.caption.weight(.medium))
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                                HStack(spacing: 6) {
+                                    Label("\(summary.recognizedPhotoCount)", systemImage: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                    Label("\(summary.potentialPhotoCount)", systemImage: "questionmark.circle.fill")
+                                        .foregroundStyle(.purple)
+                                }
+                                .font(.caption2.monospacedDigit())
+                                .help("已识别 \(summary.recognizedPhotoCount) 张 · 潜在识别 \(summary.potentialPhotoCount) 张")
+                            }
+                            .frame(width: 108)
+                            .padding(8)
+                            .background(selectedPersonID == summary.person.id ? Color.accentColor.opacity(0.12) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 12))
+                            .contentShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(summary.person.displayName)，已识别 \(summary.recognizedPhotoCount) 张，潜在识别 \(summary.potentialPhotoCount) 张")
+                        .accessibilityAddTraits(selectedPersonID == summary.person.id ? .isSelected : [])
+                    }
+                }
+            }
+            .scrollIndicators(.visible)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct PersonAlbumAvatar: View {
+    let asset: LibraryAsset?
+    let faceBox: CGRect?
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+            }
+        }
+        .frame(width: 58, height: 58)
+        .background(.quaternary)
+        .clipShape(Circle())
+        .task(id: asset?.revisionID) {
+            image = nil
+            guard let asset else { return }
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = true
+            LibraryImageManager.shared.requestImage(
+                for: asset,
+                targetSize: CGSize(width: 360, height: 360),
+                contentMode: .aspectFit,
+                options: options
+            ) { source, _ in
+                guard let source else { return }
+                guard let cgImage = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+                let sourceRect = faceBox.map { box in
+                    CGRect(
+                        x: box.minX * CGFloat(cgImage.width),
+                        y: (1 - box.maxY) * CGFloat(cgImage.height),
+                        width: box.width * CGFloat(cgImage.width),
+                        height: box.height * CGFloat(cgImage.height)
+                    ).insetBy(dx: -box.width * CGFloat(cgImage.width) * 0.18,
+                              dy: -box.height * CGFloat(cgImage.height) * 0.18)
+                }
+                let cropped = sourceRect.flatMap { rect in
+                    cgImage.cropping(to: rect.integral.intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)))
+                } ?? cgImage
+                image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
             }
         }
     }

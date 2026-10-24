@@ -34,6 +34,7 @@ platform :mac do
       "DEVELOPMENT_TEAM" => team,
       "CURRENT_PROJECT_VERSION" => number,
       "CODE_SIGN_STYLE" => "Automatic",
+      "ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR" => "all",
       "ONLY_ACTIVE_ARCH" => "NO"
     }
     version = ENV["APP_VERSION"].to_s.strip

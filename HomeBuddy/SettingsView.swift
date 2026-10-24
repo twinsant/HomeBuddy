@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var ollamaModel = OllamaConfiguration.defaultModel
     @State private var ollamaModels: [String] = []
     @State private var isLoadingOllamaModels = false
+    @State private var ollamaStatusMessage = ""
     @State private var chromaBaseURL = ChromaConfiguration.defaultBaseURL
     @State private var chromaTenant = ChromaConfiguration.defaultTenant
     @State private var chromaDatabase = ChromaConfiguration.defaultDatabase
@@ -28,8 +29,9 @@ struct SettingsView: View {
     @State private var faceModelStatusMessage = ""
 
     var body: some View {
-        Form {
-            Section("照片数据库") {
+        TabView {
+            Form {
+                Section("照片数据库") {
                 LabeledContent("SQLite 存储目录") {
                     VStack(alignment: .trailing, spacing: 6) {
                         Text(storageDirectory?.path ?? "未配置")
@@ -59,8 +61,12 @@ struct SettingsView: View {
                         .foregroundStyle(.green)
                 }
             }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("数据库", systemImage: "externaldrive") }
 
-            Section("Ollama 图片识别") {
+            Form {
+                Section("Ollama 图片识别") {
                 TextField("服务地址", text: $ollamaBaseURL)
                 TextField("模型名称", text: $ollamaModel)
 
@@ -83,7 +89,7 @@ struct SettingsView: View {
                     .disabled(isLoadingOllamaModels)
                     Button("保存") {
                         OllamaConfiguration(baseURL: ollamaBaseURL, model: ollamaModel).save()
-                        statusMessage = "Ollama 配置已保存。"
+                        ollamaStatusMessage = "Ollama 配置已保存。"
                     }
                 }
                 .font(.caption)
@@ -98,11 +104,21 @@ struct SettingsView: View {
                 }
 
                 Text("默认使用本机 Ollama 服务。模型名称也可以手动输入。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if !ollamaStatusMessage.isEmpty {
+                    Text(ollamaStatusMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
             }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("图片识别", systemImage: "sparkles") }
 
-            Section("本地人脸识别") {
+            Form {
+                Section("本地人脸识别") {
                 LabeledContent("GGUF 模型") {
                     VStack(alignment: .trailing, spacing: 6) {
                         Text(faceModelPath ?? "未配置")
@@ -127,8 +143,12 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("人脸识别", systemImage: "face.smiling") }
 
-            Section("Chroma 向量数据库") {
+            Form {
+                Section("Chroma 向量数据库") {
                 TextField("服务地址", text: $chromaBaseURL)
                 TextField("Tenant", text: $chromaTenant)
                 TextField("Database", text: $chromaDatabase)
@@ -161,10 +181,12 @@ struct SettingsView: View {
                         .foregroundStyle(chromaStatusMessage == "Chroma v2 连接成功。" ? .green : .red)
                 }
             }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("向量数据库", systemImage: "point.3.connected.trianglepath.dotted") }
         }
-        .formStyle(.grouped)
         .padding()
-        .frame(width: 600, height: 620)
+        .frame(width: 600, height: 360)
         .onAppear {
             storageDirectory = PhotoMetadataCache.shared.storageDirectoryURL
             let configuration = OllamaConfiguration.current
@@ -225,7 +247,7 @@ struct SettingsView: View {
                 }
             } catch {
                 ollamaModels = []
-                statusMessage = error.localizedDescription
+                ollamaStatusMessage = error.localizedDescription
             }
             isLoadingOllamaModels = false
         }
