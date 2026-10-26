@@ -164,6 +164,10 @@ Mac App Store 截图规格：16:10，可用 1280×800 / 1440×900 / 2560×1600 /
 
 六张的顺序按「我为什么需要它」排，不按功能菜单排。
 
+**名称可用性（2026-10-26 实测）**：`HomeBuddy` 这个英文名在 App Store 已被别的账号占用，`HomeBuddy: Photo Organizer` 可用并已创建。这条实测结果反过来支持了加品类词的决定。
+
+**已上传（2026-10-26）**：`fastlane mac metadata` 与 `fastlane mac screenshots` 均已推送到 App Store Connect 的 1.0 版本（zh-Hans + en-US）。截图目前两张一语言。
+
 **已出图（2026-10-24）**：`fastlane/screenshots/{en-US,zh-Hans}/01-library.png`、`02-setup.png`，各 2880×1800。剩余四张要等人脸模型配上（否则详情页会出现「未检测到人脸」和 Chroma 未配置的提示条，不适合上商店）。
 
 | # | 画面 | 英文文案 | 中文文案 |
