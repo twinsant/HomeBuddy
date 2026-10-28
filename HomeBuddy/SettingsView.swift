@@ -8,6 +8,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    @AppStorage("preferredAppLanguage") private var preferredAppLanguage = AppLanguage.system.rawValue
     @State private var storageDirectory: URL?
     @State private var pendingDirectory: URL?
     @State private var isConfirmingOverwrite = false
@@ -31,10 +32,26 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             Form {
+                Section("语言") {
+                    Picker("应用语言", selection: $preferredAppLanguage) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(LocalizedStringKey(language.title))
+                                .tag(language.rawValue)
+                        }
+                    }
+                    Text("更改后立即应用于 HomeBuddy 界面。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("通用", systemImage: "globe") }
+
+            Form {
                 Section("照片数据库") {
                 LabeledContent("SQLite 存储目录") {
                     VStack(alignment: .trailing, spacing: 6) {
-                        Text(storageDirectory?.path ?? "未配置")
+                        Text(storageDirectory?.path ?? AppLocalization.localizedString("未配置", comment: "Not Configured"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -78,7 +95,7 @@ struct SettingsView: View {
                     } else if ollamaModels.isEmpty {
                         Text("未读取到模型，请确认 Ollama 已启动。")
                     } else {
-                        Text("已找到 \(ollamaModels.count) 个模型。请选择支持图片输入的模型。")
+                        Text(String.localizedStringWithFormat(AppLocalization.localizedString("已找到 %lld 个模型。请选择支持图片输入的模型。", comment: ""), ollamaModels.count))
                     }
                     Spacer()
                     Button {
@@ -89,7 +106,7 @@ struct SettingsView: View {
                     .disabled(isLoadingOllamaModels)
                     Button("保存") {
                         OllamaConfiguration(baseURL: ollamaBaseURL, model: ollamaModel).save()
-                        ollamaStatusMessage = "Ollama 配置已保存。"
+                        ollamaStatusMessage = AppLocalization.localizedString("Ollama 配置已保存。", comment: "Ollama settings saved.")
                     }
                 }
                 .font(.caption)
@@ -121,7 +138,7 @@ struct SettingsView: View {
                 Section("本地人脸识别") {
                 LabeledContent("GGUF 模型") {
                     VStack(alignment: .trailing, spacing: 6) {
-                        Text(faceModelPath ?? "未配置")
+                        Text(faceModelPath ?? AppLocalization.localizedString("未配置", comment: "Not Configured"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -222,9 +239,9 @@ struct SettingsView: View {
 
     private func chooseStorageDirectory() {
         let panel = NSOpenPanel()
-        panel.title = "选择照片数据库存储目录"
-        panel.message = "选择目录即授予 HomeBuddy 对该目录的读写权限。"
-        panel.prompt = "选择"
+        panel.title = AppLocalization.localizedString("选择照片数据库存储目录", comment: "Choose Photo Database Storage Folder")
+        panel.message = AppLocalization.localizedString("选择目录即授予 HomeBuddy 对该目录的读写权限。", comment: "Selecting a folder grants HomeBuddy read and write access to it.")
+        panel.prompt = AppLocalization.localizedString("选择", comment: "Choose")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -260,13 +277,13 @@ struct SettingsView: View {
             database: chromaDatabase,
             collection: chromaCollection
         ).save()
-        chromaStatusMessage = "Chroma 配置已保存。"
+        chromaStatusMessage = AppLocalization.localizedString("Chroma 配置已保存。", comment: "Chroma settings saved.")
     }
 
     private func chooseFaceModel() {
         let panel = NSOpenPanel()
-        panel.title = "选择 face-detect GGUF 模型"
-        panel.prompt = "选择"
+        panel.title = AppLocalization.localizedString("选择 face-detect GGUF 模型", comment: "Choose face-detect GGUF Model")
+        panel.prompt = AppLocalization.localizedString("选择", comment: "Choose")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -275,16 +292,16 @@ struct SettingsView: View {
         do {
             try FaceRecognitionConfiguration.saveModelURL(url)
             faceModelPath = url.path
-            faceModelStatusMessage = "模型路径已保存。打开大图后可执行人脸识别。"
+            faceModelStatusMessage = AppLocalization.localizedString("模型路径已保存。打开大图后可执行人脸识别。", comment: "Model location saved. Open a photo in the viewer to recognize faces.")
         } catch {
-            faceModelStatusMessage = "无法保存模型访问权限：\(error.localizedDescription)"
+            faceModelStatusMessage = String(format: AppLocalization.localizedString("无法保存模型访问权限：%@", comment: "Could not save model access permission: %@"), error.localizedDescription)
         }
     }
 
     private func clearFaceModel() {
         FaceRecognitionConfiguration.clearModelURL()
         faceModelPath = nil
-        faceModelStatusMessage = "模型配置已移除。"
+        faceModelStatusMessage = AppLocalization.localizedString("模型配置已移除。", comment: "Model configuration removed.")
     }
 
     private func testChromaConnection() {
@@ -299,7 +316,7 @@ struct SettingsView: View {
         Task {
             do {
                 try await ChromaService.shared.checkConnection(configuration: configuration)
-                chromaStatusMessage = "Chroma v2 连接成功。"
+                chromaStatusMessage = AppLocalization.localizedString("Chroma v2 连接成功。", comment: "Connected to Chroma v2.")
             } catch {
                 chromaStatusMessage = error.localizedDescription
             }
@@ -312,7 +329,7 @@ struct SettingsView: View {
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
         let currentDirectory = storageDirectory?.resolvingSymlinksInPath().standardizedFileURL
         guard resolvedDirectory != currentDirectory else {
-            statusMessage = "当前已经使用该目录。"
+            statusMessage = AppLocalization.localizedString("当前已经使用该目录。", comment: "This folder is already in use.")
             return
         }
 
@@ -327,13 +344,16 @@ struct SettingsView: View {
 
     private func migrateDatabase(to directory: URL, overwriting: Bool) {
         guard PhotoMetadataCache.shared.copyDatabase(to: directory, overwriting: overwriting) else {
-            errorMessage = "数据库复制失败，当前存储目录未改变。请确认目标目录可写。"
+            errorMessage = AppLocalization.localizedString("数据库复制失败，当前存储目录未改变。请确认目标目录可写。", comment: "Could not copy the database. The current storage location has not changed. Make sure the destination is writable.")
             isShowingError = true
             return
         }
 
         storageDirectory = PhotoMetadataCache.shared.setStorageDirectory(directory)
-        statusMessage = "数据库已复制并切换到：\(storageDirectory?.path ?? directory.path)"
+        statusMessage = String.localizedStringWithFormat(
+            AppLocalization.localizedString("数据库已复制并切换到：%@", comment: "Database copied. Storage location changed to: %@"),
+            storageDirectory?.path ?? directory.path
+        )
     }
 }
 

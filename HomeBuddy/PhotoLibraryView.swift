@@ -799,6 +799,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("上一张", systemImage: "chevron.left")
                 }
+                .accessibilityIdentifier("previousPhoto")
                 .disabled(currentIndex == 0)
                 .keyboardShortcut(.leftArrow, modifiers: [])
 
@@ -807,6 +808,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("下一张", systemImage: "chevron.right")
                 }
+                .accessibilityIdentifier("nextPhoto")
                 .disabled(currentIndex == assets.count - 1)
                 .keyboardShortcut(.rightArrow, modifiers: [])
             }
@@ -845,6 +847,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("照片信息", systemImage: "info.circle")
                 }
+                .accessibilityIdentifier("photoInfo")
                 .help("显示或隐藏照片信息")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -855,6 +858,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("复制图片", systemImage: "doc.on.doc")
                 }
+                .accessibilityIdentifier("copyImage")
                 .disabled(image == nil)
                 .keyboardShortcut("c", modifiers: .command)
                 .help("复制当前图片（⌘C）")
@@ -867,6 +871,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("识别文字", systemImage: "text.viewfinder")
                 }
+                .accessibilityIdentifier("recognizeText")
                 .disabled(image == nil || isAnalyzing)
                 .help("识别当前照片中的文字")
             }
@@ -878,6 +883,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("识别二维码和条码", systemImage: "barcode.viewfinder")
                 }
+                .accessibilityIdentifier("recognizeBarcodes")
                 .disabled(image == nil || isAnalyzing)
                 .help("识别当前照片中的二维码和条码")
             }
@@ -889,6 +895,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("检测人脸", systemImage: "face.smiling")
                 }
+                .accessibilityIdentifier("detectFaces")
                 .disabled(image == nil || isAnalyzing)
                 .help("检测当前照片中的人脸")
             }
@@ -912,6 +919,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("识别人脸并匹配", systemImage: "person.crop.rectangle.stack")
                 }
+                .accessibilityIdentifier("recognizeAndMatchFaces")
                 .disabled(image == nil || !hasLoadedFaceData || !hasLoadedPeople || recognitionTask != nil)
                 .help("使用本地模型识别人脸，并从 Chroma 查询可能人物")
             }
@@ -923,6 +931,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("Ollama 识图", systemImage: "brain")
                 }
+                .accessibilityIdentifier("ollamaImageRecognition")
                 .disabled(image == nil || isAnalyzing || isOllamaAnalyzing)
                 .help("使用本机 Ollama 视觉模型描述当前照片")
             }
@@ -943,6 +952,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("放大", systemImage: "plus.magnifyingglass")
                 }
+                .accessibilityIdentifier("zoomIn")
                 .disabled(image == nil || zoomScale >= 5)
                 .help("放大照片")
             }
@@ -954,6 +964,7 @@ private struct PhotoViewerView: View {
                 } label: {
                     Label("缩小", systemImage: "minus.magnifyingglass")
                 }
+                .accessibilityIdentifier("zoomOut")
                 .disabled(image == nil || zoomScale <= 1)
                 .help("缩小照片")
             }
@@ -967,6 +978,7 @@ private struct PhotoViewerView: View {
                     Text("\(Int(displayedZoomScale * 100))%")
                         .monospacedDigit()
                 }
+                .accessibilityIdentifier("zoomPercentage")
                 .disabled(image == nil)
                 .help("还原为适合窗口的大小")
             }
@@ -1249,7 +1261,7 @@ private struct PhotoViewerView: View {
             guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
             if !succeeded, detectedFaces.indices.contains(faceIndex) {
                 detectedFaces[faceIndex] = DetectedFace(box: face.box, personID: previous, candidate: face.candidate)
-                faceRecognitionStatus = "人物已保存，但人脸标注未写入 SQLite。请重新检测后再试。"
+                faceRecognitionStatus = AppLocalization.localizedString("人物已保存，但人脸标注未写入 SQLite。请重新检测后再试。", comment: "")
             } else if succeeded {
                 refreshMostLabeledPeople()
                 guard let embedding = faceEmbeddings.first(where: { boxesMatch($0.box, face.box) }) else { return }
@@ -1275,7 +1287,10 @@ private struct PhotoViewerView: View {
                         }
                     } catch {
                         guard currentAsset.localIdentifier == assetID else { return }
-                        faceRecognitionStatus = "人物标注已保存在本地，但 Chroma 更新失败：\(error.localizedDescription)"
+                        faceRecognitionStatus = String.localizedStringWithFormat(
+                            AppLocalization.localizedString("人物标注已保存在本地，但 Chroma 更新失败：%@", comment: ""),
+                            error.localizedDescription
+                        )
                     }
                 }
             }
@@ -1298,7 +1313,7 @@ private struct PhotoViewerView: View {
               !isRecognizingFaces, automaticRecognitionTask == nil
         else { return }
         guard FaceRecognitionConfiguration.modelURL() != nil else {
-            faceRecognitionStatus = "人脸框来自基础检测；请在设置中选择 GGUF 模型，再点击“识别人脸并匹配”生成候选。"
+            faceRecognitionStatus = AppLocalization.localizedString("人脸框来自基础检测；请在设置中选择 GGUF 模型，再点击“识别人脸并匹配”生成候选。", comment: "")
             return
         }
         let generation = photoGeneration
@@ -1362,12 +1377,18 @@ private struct PhotoViewerView: View {
                     )
                     guard !Task.isCancelled, photoGeneration == generation else { return }
                     detectedFaces = matchedFaces
-                    faceRecognitionStatus = matchedFaces.contains(where: { $0.candidate != nil })
-                        ? "紫色提示是可能人物，请点击人脸确认或重新标注。"
-                        : "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。"
+                    faceRecognitionStatus = AppLocalization.localizedString(
+                        matchedFaces.contains(where: { $0.candidate != nil })
+                            ? "紫色提示是可能人物，请点击人脸确认或重新标注。"
+                            : "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。",
+                        comment: ""
+                    )
                 } catch {
                     guard !Task.isCancelled, photoGeneration == generation else { return }
-                    faceRecognitionStatus = "本地检测完成，但 Chroma 查询失败：\(error.localizedDescription)"
+                    faceRecognitionStatus = String.localizedStringWithFormat(
+                        AppLocalization.localizedString("本地检测完成，但 Chroma 查询失败：%@", comment: ""),
+                        error.localizedDescription
+                    )
                     recognitionFailed = true
                 }
                 guard !Task.isCancelled, photoGeneration == generation else { return }
@@ -1487,8 +1508,8 @@ private struct PhotoViewerView: View {
         else {
             if type != .faces {
                 analysisResult = VisionAnalysisResult(
-                    title: "无法分析照片",
-                    message: "当前照片还没有加载完成。"
+                    title: AppLocalization.localizedString("无法分析照片", comment: ""),
+                    message: AppLocalization.localizedString("当前照片还没有加载完成。", comment: "")
                 )
             }
             return
@@ -1526,7 +1547,7 @@ private struct PhotoViewerView: View {
                     if FaceRecognitionConfiguration.modelURL() != nil, !isRecognizingFaces {
                         startFaceRecognition(force: true)
                     } else if FaceRecognitionConfiguration.modelURL() == nil {
-                        faceRecognitionStatus = "检测到人脸；要查询“可能是某某”，请先在设置中选择本地 GGUF 模型。"
+                                faceRecognitionStatus = AppLocalization.localizedString("检测到人脸；要查询“可能是某某”，请先在设置中选择本地 GGUF 模型。", comment: "")
                     }
                 } else {
                     detectedFaceBoxes = result.faceBoxes
@@ -1540,8 +1561,8 @@ private struct PhotoViewerView: View {
               let imageData = Self.jpegData(from: image)
         else {
             analysisResult = VisionAnalysisResult(
-                title: "无法分析照片",
-                message: "当前照片还没有加载完成。"
+                title: AppLocalization.localizedString("无法分析照片", comment: ""),
+                message: AppLocalization.localizedString("当前照片还没有加载完成。", comment: "")
             )
             return
         }
@@ -1569,14 +1590,17 @@ private struct PhotoViewerView: View {
                 guard saved else { throw DiskLibraryError.message("图片或数据库已变化，识别结果未保存。请刷新后重试。") }
                 isOllamaAnalyzing = false
                 ollamaText = text
-                analysisResult = VisionAnalysisResult(title: "Ollama 图片识别结果", message: text)
+                analysisResult = VisionAnalysisResult(title: AppLocalization.localizedString("Ollama 图片识别结果", comment: ""), message: text)
             } catch {
                 guard currentAsset.localIdentifier == assetID, photoGeneration == generation else { return }
                 PhotoMetadataCache.shared.recordOllamaFailure(for: asset)
                 isOllamaAnalyzing = false
                 analysisResult = VisionAnalysisResult(
-                    title: "Ollama 识别失败",
-                    message: "\(error.localizedDescription)\n\n请确认 Ollama 已启动，并且设置中的模型支持图片输入。"
+                    title: AppLocalization.localizedString("Ollama 识别失败", comment: ""),
+                    message: String.localizedStringWithFormat(
+                        AppLocalization.localizedString("%@\n\n请确认 Ollama 已启动，并且设置中的模型支持图片输入。", comment: ""),
+                        error.localizedDescription
+                    )
                 )
             }
         }
@@ -1617,8 +1641,8 @@ private struct PhotoViewerView: View {
                     $0.topCandidates(1).first?.string
                 }
                 return VisionAnalysisResult(
-                    title: "文字识别结果",
-                    message: text.isEmpty ? "没有识别到文字。" : text.joined(separator: "\n")
+                    title: AppLocalization.localizedString("文字识别结果", comment: ""),
+                    message: text.isEmpty ? AppLocalization.localizedString("没有识别到文字。", comment: "") : text.joined(separator: "\n")
                 )
 
             case .barcode:
@@ -1629,11 +1653,11 @@ private struct PhotoViewerView: View {
                 let codes: [String] = observations.compactMap { observation in
                     guard let value = observation.payloadStringValue else { return nil }
                     let type = observation.symbology.rawValue
-                    return "\(type)：\(value)"
+                    return "\(type): \(value)"
                 }
                 return VisionAnalysisResult(
-                    title: "二维码和条码结果",
-                    message: codes.isEmpty ? "没有识别到二维码或条码。" : codes.joined(separator: "\n")
+                    title: AppLocalization.localizedString("二维码和条码结果", comment: ""),
+                    message: codes.isEmpty ? AppLocalization.localizedString("没有识别到二维码或条码。", comment: "") : codes.joined(separator: "\n")
                 )
 
             case .faces:
@@ -1642,14 +1666,16 @@ private struct PhotoViewerView: View {
                 let observations: [VNFaceObservation] = request.results ?? []
                 let count = observations.count
                 return VisionAnalysisResult(
-                    title: "人脸检测结果",
-                    message: count == 0 ? "没有检测到人脸。" : "检测到 \(count) 张人脸。",
+                    title: AppLocalization.localizedString("人脸检测结果", comment: ""),
+                    message: count == 0
+                        ? AppLocalization.localizedString("没有检测到人脸。", comment: "")
+                        : String.localizedStringWithFormat(AppLocalization.localizedString("检测到 %lld 张人脸。", comment: ""), count),
                     faceCount: count,
                     faceBoxes: observations.map(\.boundingBox)
                 )
             }
         } catch {
-            return VisionAnalysisResult(title: "分析失败", message: error.localizedDescription)
+            return VisionAnalysisResult(title: AppLocalization.localizedString("分析失败", comment: ""), message: error.localizedDescription)
         }
     }
 }
@@ -2016,10 +2042,12 @@ private struct VisionAnalysisResultView: View {
             HStack {
                 Label(result.title, systemImage: "wand.and.stars")
                     .font(.title3.weight(.semibold))
+                    .accessibilityIdentifier("analysisResultTitle")
                 Spacer()
                 Button("完成") {
                     dismiss()
                 }
+                .accessibilityIdentifier("completeAnalysis")
                 .keyboardShortcut(.cancelAction)
             }
 
@@ -2076,7 +2104,7 @@ struct PhotoMetadata {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
         else {
-            creationDate = asset.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "未知"
+            creationDate = asset.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? AppLocalization.localizedString("未知", comment: "")
             camera = nil
             lens = nil
             exposure = nil
@@ -2091,7 +2119,7 @@ struct PhotoMetadata {
         let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any]
         creationDate = asset.creationDate?.formatted(date: .abbreviated, time: .shortened)
             ?? (exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String)
-            ?? "未知"
+            ?? AppLocalization.localizedString("未知", comment: "")
 
         let make = tiff?[kCGImagePropertyTIFFMake as String] as? String
         let model = tiff?[kCGImagePropertyTIFFModel as String] as? String
@@ -2105,7 +2133,9 @@ struct PhotoMetadata {
 
     private static func exposureValue(_ value: Any?) -> String? {
         guard let value = value as? Double else { return nil }
-        return value >= 1 ? String(format: "%.2f 秒", value) : String(format: "1/%.0f 秒", 1 / value)
+        return value >= 1
+            ? AppLocalization.format("%.2f 秒", value)
+            : AppLocalization.format("1/%.0f 秒", 1 / value)
     }
 
     private static func isoValue(_ value: Any?) -> String? {
@@ -2153,12 +2183,12 @@ private struct PhotoInfoSidebar: View {
                 if let metadata {
                     infoSection("基本信息", rows: [
                         ("分辨率", metadata.pixelSize),
-                        ("文件类型", metadata.fileType ?? "未知"),
+                        ("文件类型", metadata.fileType ?? AppLocalization.localizedString("未知", comment: "")),
                         ("文件大小", metadata.fileSize),
                         ("拍摄时间", metadata.creationDate),
                         ("元数据更新时间", metadata.metadataUpdatedAt.map {
                             $0.formatted(date: .abbreviated, time: .shortened)
-                        } ?? "未知"),
+                        } ?? AppLocalization.localizedString("未知", comment: "")),
                         ("状态", asset.relativePath == nil ? (asset.isFavorite ? "已收藏" : "未收藏") : "磁盘图片（只读）")
                     ])
 

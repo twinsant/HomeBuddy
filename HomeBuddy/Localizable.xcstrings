@@ -1,0 +1,6190 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "“%@”中还没有照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "“%@”中还没有照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Photos in “%@”"
+          }
+        }
+      }
+    },
+    "%.2f 秒" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%.2f 秒"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%.2f sec"
+          }
+        }
+      }
+    },
+    "%@\n\n请确认 Ollama 已启动，并且设置中的模型支持图片输入。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%@\n\n请确认 Ollama 已启动，并且设置中的模型支持图片输入。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n\nMake sure Ollama is running and the selected model in Settings supports image input."
+          }
+        }
+      }
+    },
+    "%@ · %lld 张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%@ · %lld 张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$lld photos"
+          }
+        }
+      }
+    },
+    "%@，已识别 %lld 张，潜在识别 %lld 张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%@，已识别 %lld 张，潜在识别 %lld 张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$lld recognized · %3$lld potential matches"
+          }
+        }
+      }
+    },
+    "%@：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%@：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@：已标注 %lld 张人脸，点击确定并保存" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%@：已标注 %lld 张人脸，点击确定并保存"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$lld faces labeled; click to confirm and save"
+          }
+        }
+      }
+    },
+    "%1$@，已识别 %2$lld 张，潜在识别 %3$lld 张" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%1$@，已识别 %2$lld 张，潜在识别 %3$lld 张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$lld recognized · %3$lld potential"
+          }
+        }
+      }
+    },
+    "%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%lld"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        }
+      }
+    },
+    "%lld 张图片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%lld 张图片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld images"
+          }
+        }
+      }
+    },
+    "%lld%%" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "%lld%%"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        }
+      }
+    },
+    "1/%.0f 秒" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "1/%.0f 秒"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1/%.0f sec"
+          }
+        }
+      }
+    },
+    "99+" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "99+"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "99+"
+          }
+        }
+      }
+    },
+    "Chroma v2 连接成功。" : {
+      "comment" : "Connected to Chroma v2.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma v2 连接成功。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected to Chroma v2."
+          }
+        }
+      }
+    },
+    "Chroma 向量数据库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma 向量数据库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chroma Vector Database"
+          }
+        }
+      }
+    },
+    "Chroma 地址无效，请在设置中检查地址。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma 地址无效，请在设置中检查地址。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Chroma URL is invalid. Check it in Settings."
+          }
+        }
+      }
+    },
+    "Chroma 返回了无法解析的响应。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma 返回了无法解析的响应。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chroma returned an unreadable response."
+          }
+        }
+      }
+    },
+    "Chroma 配置已保存。" : {
+      "comment" : "Chroma settings saved.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma 配置已保存。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chroma settings saved."
+          }
+        }
+      }
+    },
+    "Chroma 配置无效：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma 配置无效：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid Chroma configuration: %@"
+          }
+        }
+      }
+    },
+    "Chroma（HTTP %lld）：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Chroma（HTTP %lld）：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chroma (HTTP %1$lld): %2$@"
+          }
+        }
+      }
+    },
+    "Collection" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Collection"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collection"
+          }
+        }
+      }
+    },
+    "collection ID 不能为空。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "collection ID 不能为空。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collection ID cannot be empty."
+          }
+        }
+      }
+    },
+    "Database" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Database"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database"
+          }
+        }
+      }
+    },
+    "documents 与 ids 数量必须一致。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "documents 与 ids 数量必须一致。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The number of documents must match the number of IDs."
+          }
+        }
+      }
+    },
+    "GGUF 模型" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "GGUF 模型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GGUF Model"
+          }
+        }
+      }
+    },
+    "ids 与 embeddings 数量必须一致且不能为空。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "ids 与 embeddings 数量必须一致且不能为空。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The number of IDs must match the number of embeddings, and neither may be empty."
+          }
+        }
+      }
+    },
+    "LIVE" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "LIVE"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LIVE"
+          }
+        }
+      }
+    },
+    "metadatas 与 ids 数量必须一致。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "metadatas 与 ids 数量必须一致。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The number of metadata entries must match the number of IDs."
+          }
+        }
+      }
+    },
+    "Ollama 图片识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 图片识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama Image Recognition"
+          }
+        }
+      }
+    },
+    "Ollama 图片识别结果" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 图片识别结果"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama Image Recognition Results"
+          }
+        }
+      }
+    },
+    "Ollama 地址无效，请在设置中检查地址。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 地址无效，请在设置中检查地址。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Ollama URL is invalid. Check it in Settings."
+          }
+        }
+      }
+    },
+    "Ollama 批量识图" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 批量识图"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batch Ollama Recognition"
+          }
+        }
+      }
+    },
+    "Ollama 正在分析照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 正在分析照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama is analyzing the photo"
+          }
+        }
+      }
+    },
+    "Ollama 没有返回识别结果。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 没有返回识别结果。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama returned no recognition results."
+          }
+        }
+      }
+    },
+    "Ollama 识别失败" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 识别失败"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama Recognition Failed"
+          }
+        }
+      }
+    },
+    "Ollama 识别文字" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 识别文字"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama Recognized Text"
+          }
+        }
+      }
+    },
+    "Ollama 识图" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 识图"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama Image Recognition"
+          }
+        }
+      }
+    },
+    "Ollama 识图失败 %lld 次" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 识图失败 %lld 次"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama recognition failed %lld times"
+          }
+        }
+      }
+    },
+    "Ollama 返回了无法解析的响应。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 返回了无法解析的响应。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama returned an unreadable response."
+          }
+        }
+      }
+    },
+    "Ollama 配置已保存。" : {
+      "comment" : "Ollama settings saved.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama 配置已保存。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama settings saved."
+          }
+        }
+      }
+    },
+    "Ollama：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Ollama：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ollama: %@"
+          }
+        }
+      }
+    },
+    "SQLite 存储目录" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "SQLite 存储目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQLite Storage Location"
+          }
+        }
+      }
+    },
+    "SQLite 缓存" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "SQLite 缓存"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQLite Cache"
+          }
+        }
+      }
+    },
+    "Tenant" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "Tenant"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant"
+          }
+        }
+      }
+    },
+    "tenant 和 database 不能为空。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "tenant 和 database 不能为空。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenant and database cannot be empty."
+          }
+        }
+      }
+    },
+    "上一张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "上一张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous"
+          }
+        }
+      }
+    },
+    "下一张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "下一张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        }
+      }
+    },
+    "中断" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "中断"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause"
+          }
+        }
+      }
+    },
+    "二维码和条码结果" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "二维码和条码结果"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR Code and Barcode Results"
+          }
+        }
+      }
+    },
+    "人物" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人物"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "People"
+          }
+        }
+      }
+    },
+    "人物已保存，但人脸标注未写入 SQLite。请重新检测后再试。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人物已保存，但人脸标注未写入 SQLite。请重新检测后再试。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Person saved, but the face label could not be written to SQLite. Run face detection again and retry."
+          }
+        }
+      }
+    },
+    "人物标注已保存在本地，但 Chroma 更新失败：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人物标注已保存在本地，但 Chroma 更新失败：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Person label saved locally, but Chroma could not be updated: %@"
+          }
+        }
+      }
+    },
+    "人脸框来自基础检测；请在设置中选择 GGUF 模型，再点击“识别人脸并匹配”生成候选。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸框来自基础检测；请在设置中选择 GGUF 模型，再点击“识别人脸并匹配”生成候选。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face boxes come from basic detection. Choose a GGUF model in Settings, then select “Recognize and Match Faces” to find candidates."
+          }
+        }
+      }
+    },
+    "人脸检测结果" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸检测结果"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face Detection Results"
+          }
+        }
+      }
+    },
+    "人脸检测结果未能写入 SQLite。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸检测结果未能写入 SQLite。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save face detection results to SQLite."
+          }
+        }
+      }
+    },
+    "人脸模型返回了无效的 512 维 embedding。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸模型返回了无效的 512 维 embedding。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The face model returned an invalid 512-dimensional embedding."
+          }
+        }
+      }
+    },
+    "人脸识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face Recognition"
+          }
+        }
+      }
+    },
+    "人脸识别还没有模型" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "人脸识别还没有模型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Face Recognition Model Yet"
+          }
+        }
+      }
+    },
+    "从列表移除（保留原图）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "从列表移除（保留原图）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from List (Keep Original Files)"
+          }
+        }
+      }
+    },
+    "从左侧选择相册以查看其中的照片。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "从左侧选择相册以查看其中的照片。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an album in the sidebar to view its photos."
+          }
+        }
+      }
+    },
+    "位置" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "位置"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location"
+          }
+        }
+      }
+    },
+    "使用本地模型识别人脸，并从 Chroma 查询可能人物" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "使用本地模型识别人脸，并从 Chroma 查询可能人物"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize faces locally and find possible matches in Chroma"
+          }
+        }
+      }
+    },
+    "使用本机 Ollama 视觉模型描述当前照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "使用本机 Ollama 视觉模型描述当前照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe the current photo with a local Ollama vision model"
+          }
+        }
+      }
+    },
+    "保存" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "保存"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "保留原始格式和元数据；Live Photo 仅导出静态照片。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "保留原始格式和元数据；Live Photo 仅导出静态照片。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preserve the original format and metadata. Live Photos are exported as still images only."
+          }
+        }
+      }
+    },
+    "停止" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "停止"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        }
+      }
+    },
+    "允许之后，系统相册会出现在左侧。也可以先用「添加目录…」浏览磁盘上的照片文件夹。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "允许之后，系统相册会出现在左侧。也可以先用「添加目录…」浏览磁盘上的照片文件夹。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once access is granted, your photo albums will appear in the sidebar. You can also browse a folder on disk using “Add Folder…” first."
+          }
+        }
+      }
+    },
+    "元数据更新时间" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "元数据更新时间"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metadata Updated"
+          }
+        }
+      }
+    },
+    "先在设置里选择人脸模型文件" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "先在设置里选择人脸模型文件"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a face recognition model in Settings first"
+          }
+        }
+      }
+    },
+    "全部" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "全部"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All"
+          }
+        }
+      }
+    },
+    "全部处理完成" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "全部处理完成"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Done"
+          }
+        }
+      }
+    },
+    "准备识别人脸…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "准备识别人脸…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing to recognize faces…"
+          }
+        }
+      }
+    },
+    "分析失败" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "分析失败"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analysis Failed"
+          }
+        }
+      }
+    },
+    "分辨率" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "分辨率"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolution"
+          }
+        }
+      }
+    },
+    "分钟" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "分钟"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minutes"
+          }
+        }
+      }
+    },
+    "删除向量必须提供 metadata 条件。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "删除向量必须提供 metadata 条件。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A metadata filter is required to delete vectors."
+          }
+        }
+      }
+    },
+    "刷新图库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "刷新图库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Library"
+          }
+        }
+      }
+    },
+    "刷新模型" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "刷新模型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Models"
+          }
+        }
+      }
+    },
+    "剩余：%lld 张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "剩余：%lld 张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld remaining"
+          }
+        }
+      }
+    },
+    "动态内容加载失败，显示静态照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "动态内容加载失败，显示静态照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not load motion content; showing the still photo"
+          }
+        }
+      }
+    },
+    "包含 GPS 信息" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "包含 GPS 信息"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes GPS Information"
+          }
+        }
+      }
+    },
+    "取消" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "取消"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "可能是：%@ · %lld%%" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "可能是：%@ · %lld%%"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Possible match: %@ · %lld%%"
+          }
+        }
+      }
+    },
+    "向量数据库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "向量数据库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vector Database"
+          }
+        }
+      }
+    },
+    "图片已修改，请先刷新目录。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片已修改，请先刷新目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image has changed. Refresh the folder first."
+          }
+        }
+      }
+    },
+    "图片或数据库已变化，识别结果未保存。请刷新后重试。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片或数据库已变化，识别结果未保存。请刷新后重试。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo or database changed. The recognition result was not saved. Refresh and try again."
+          }
+        }
+      }
+    },
+    "图片或数据库已变化，识别结果未保存。请重新打开任务。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片或数据库已变化，识别结果未保存。请重新打开任务。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo or database changed. The recognition result was not saved. Reopen the task."
+          }
+        }
+      }
+    },
+    "图片无法读取" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片无法读取"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Read Image"
+          }
+        }
+      }
+    },
+    "图片无法读取，请刷新目录或重新授权。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片无法读取，请刷新目录或重新授权。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read image. Refresh the folder or grant access again."
+          }
+        }
+      }
+    },
+    "图片识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image Recognition"
+          }
+        }
+      }
+    },
+    "图片路径超出已授权目录。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "图片路径超出已授权目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image path is outside the authorized folder."
+          }
+        }
+      }
+    },
+    "基本信息" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "基本信息"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basic Information"
+          }
+        }
+      }
+    },
+    "复制图片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "复制图片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Image"
+          }
+        }
+      }
+    },
+    "复制当前图片（⌘C）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "复制当前图片（⌘C）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Current Image (⌘C)"
+          }
+        }
+      }
+    },
+    "天" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "天"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "days"
+          }
+        }
+      }
+    },
+    "失败 %lld 张（恢复时会重试）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "失败 %lld 张（恢复时会重试）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld failed (will retry when resumed)"
+          }
+        }
+      }
+    },
+    "好" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "好"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "完成" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "完成"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "导出" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "导出"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        }
+      }
+    },
+    "导出位置不能是原始照片，请选择其他文件路径。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "导出位置不能是原始照片，请选择其他文件路径。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The export destination cannot be the original photo. Choose a different file path."
+          }
+        }
+      }
+    },
+    "导出照片" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "导出照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Photo"
+          }
+        }
+      }
+    },
+    "导出照片…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "导出照片…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Photo…"
+          }
+        }
+      }
+    },
+    "小时" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "小时"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hours"
+          }
+        }
+      }
+    },
+    "尚有 %lld 项待处理" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "尚有 %lld 项待处理"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld items remaining"
+          }
+        }
+      }
+    },
+    "尚未允许访问照片图库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "尚未允许访问照片图库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Library Access Not Granted"
+          }
+        }
+      }
+    },
+    "尚未选择 face-detect GGUF 模型。请到设置中选择 antelopev2.gguf。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "尚未选择 face-detect GGUF 模型。请到设置中选择 antelopev2.gguf。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No face-detect GGUF model is selected. Choose antelopev2.gguf in Settings."
+          }
+        }
+      }
+    },
+    "已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previously saved photos are skipped. Close and reopen this window to resume after pausing."
+          }
+        }
+      }
+    },
+    "已安装模型" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已安装模型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installed Models"
+          }
+        }
+      }
+    },
+    "已找到 %lld 个模型。请选择支持图片输入的模型。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已找到 %lld 个模型。请选择支持图片输入的模型。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Found %lld models. Choose one that supports image input."
+          }
+        }
+      }
+    },
+    "已收藏" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已收藏"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorite"
+          }
+        }
+      }
+    },
+    "已有检测结果仍会检查已标注人脸的 Chroma embedding；缺失时使用本地 GGUF 模型生成并保存。未标注人脸只检测方框。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已有检测结果仍会检查已标注人脸的 Chroma embedding；缺失时使用本地 GGUF 模型生成并保存。未标注人脸只检测方框。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Existing detections are also checked for Chroma embeddings of labeled faces; missing embeddings are generated and saved with the local GGUF model. Unlabeled faces are only outlined."
+          }
+        }
+      }
+    },
+    "已识别 %lld 张 · 潜在识别 %lld 张" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "已识别 %lld 张 · 潜在识别 %lld 张"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld recognized · %2$lld potential matches"
+          }
+        }
+      }
+    },
+    "平均处理时间：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "平均处理时间：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Average processing time: %@"
+          }
+        }
+      }
+    },
+    "应用语言" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "应用语言"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Language"
+          }
+        }
+      }
+    },
+    "开始识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "开始识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Recognition"
+          }
+        }
+      }
+    },
+    "当前处理" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "当前处理"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently Processing"
+          }
+        }
+      }
+    },
+    "当前处理：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "当前处理：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processing: %@"
+          }
+        }
+      }
+    },
+    "当前已经使用该目录。" : {
+      "comment" : "This folder is already in use.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "当前已经使用该目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder is already in use."
+          }
+        }
+      }
+    },
+    "当前照片还没有加载完成。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "当前照片还没有加载完成。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current photo has not finished loading."
+          }
+        }
+      }
+    },
+    "恢复识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "恢复识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Recognition"
+          }
+        }
+      }
+    },
+    "感光度" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "感光度"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ISO"
+          }
+        }
+      }
+    },
+    "打开 Ollama 批量识图任务" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "打开 Ollama 批量识图任务"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Batch Ollama Recognition"
+          }
+        }
+      }
+    },
+    "打开批量人脸识别任务" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "打开批量人脸识别任务"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Batch Face Recognition"
+          }
+        }
+      }
+    },
+    "打开照片设置" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "打开照片设置"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Photo Settings"
+          }
+        }
+      }
+    },
+    "打开设置" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "打开设置"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        }
+      }
+    },
+    "批量人脸识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "批量人脸识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batch Face Recognition"
+          }
+        }
+      }
+    },
+    "找不到 collection：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "找不到 collection：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collection not found: %@"
+          }
+        }
+      }
+    },
+    "找不到可导出的原始照片资源。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "找不到可导出的原始照片资源。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No original photo resource is available to export."
+          }
+        }
+      }
+    },
+    "找到 %lld 张照片（需同时包含全部关键词）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "找到 %lld 张照片（需同时包含全部关键词）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Found %lld photos (must match all keywords)"
+          }
+        }
+      }
+    },
+    "拍摄信息" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "拍摄信息"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture Information"
+          }
+        }
+      }
+    },
+    "拍摄时间" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "拍摄时间"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date Taken"
+          }
+        }
+      }
+    },
+    "按人物筛选" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "按人物筛选"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter by Person"
+          }
+        }
+      }
+    },
+    "搜索 Ollama 识别文字" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "搜索 Ollama 识别文字"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search text recognized by Ollama"
+          }
+        }
+      }
+    },
+    "播放 Live Photo" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "播放 Live Photo"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play Live Photo"
+          }
+        }
+      }
+    },
+    "放大" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "放大"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom In"
+          }
+        }
+      }
+    },
+    "放大照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "放大照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom In on Photo"
+          }
+        }
+      }
+    },
+    "数据库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database"
+          }
+        }
+      }
+    },
+    "数据库不可用。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库不可用。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database unavailable."
+          }
+        }
+      }
+    },
+    "数据库复制失败，当前存储目录未改变。请确认目标目录可写。" : {
+      "comment" : "Could not copy the database. The current storage location has not changed. Make sure the destination is writable.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库复制失败，当前存储目录未改变。请确认目标目录可写。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not copy the database. The current storage location has not changed. Make sure the destination is writable."
+          }
+        }
+      }
+    },
+    "数据库已切换，请重新扫描目录。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库已切换，请重新扫描目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The database has changed. Rescan the folder."
+          }
+        }
+      }
+    },
+    "数据库已复制并切换到：%@" : {
+      "comment" : "Database copied. Storage location changed to: %@",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库已复制并切换到：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database copied. Storage location changed to: %@"
+          }
+        }
+      }
+    },
+    "数据库操作失败：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "数据库操作失败：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database operation failed: %@"
+          }
+        }
+      }
+    },
+    "文件大小" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "文件大小"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File Size"
+          }
+        }
+      }
+    },
+    "文件类型" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "文件类型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File Type"
+          }
+        }
+      }
+    },
+    "文字识别结果" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "文字识别结果"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text Recognition Results"
+          }
+        }
+      }
+    },
+    "新人物名称" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "新人物名称"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Person Name"
+          }
+        }
+      }
+    },
+    "无法保存模型访问权限：%@" : {
+      "comment" : "Could not save model access permission: %@",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法保存模型访问权限：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save model access permission: %@"
+          }
+        }
+      }
+    },
+    "无法分析照片" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法分析照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Analyze Photo"
+          }
+        }
+      }
+    },
+    "无法切换存储目录" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法切换存储目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Change Storage Location"
+          }
+        }
+      }
+    },
+    "无法加载 Live Photo 的动态内容。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法加载 Live Photo 的动态内容。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not load Live Photo motion content."
+          }
+        }
+      }
+    },
+    "无法加载目录" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法加载目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Load Folder"
+          }
+        }
+      }
+    },
+    "无法访问模型文件。请在设置中重新选择模型文件。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法访问模型文件。请在设置中重新选择模型文件。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to access the model file. Select it again in Settings."
+          }
+        }
+      }
+    },
+    "无法访问照片图库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法访问照片图库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Access Photo Library"
+          }
+        }
+      }
+    },
+    "无法读取当前照片用于人脸识别。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法读取当前照片用于人脸识别。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read the current photo for face recognition."
+          }
+        }
+      }
+    },
+    "无法读取照片原始数据。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法读取照片原始数据。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read the original photo data."
+          }
+        }
+      }
+    },
+    "无法读取照片或执行人脸检测。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法读取照片或执行人脸检测。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read the photo or detect faces."
+          }
+        }
+      }
+    },
+    "无法读取目录。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "无法读取目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read folder."
+          }
+        }
+      }
+    },
+    "显示人脸方框" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "显示人脸方框"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Face Boxes"
+          }
+        }
+      }
+    },
+    "显示人脸方框（F）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "显示人脸方框（F）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Face Boxes (F)"
+          }
+        }
+      }
+    },
+    "显示全部人物照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "显示全部人物照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Photos of All People"
+          }
+        }
+      }
+    },
+    "显示或隐藏照片信息" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "显示或隐藏照片信息"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show or Hide Photo Info"
+          }
+        }
+      }
+    },
+    "曝光时间" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "曝光时间"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exposure Time"
+          }
+        }
+      }
+    },
+    "更改后立即应用于 HomeBuddy 界面。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "更改后立即应用于 HomeBuddy 界面。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes apply to the HomeBuddy interface immediately."
+          }
+        }
+      }
+    },
+    "服务地址" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "服务地址"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service URL"
+          }
+        }
+      }
+    },
+    "未命名相册" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未命名相册"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untitled Album"
+          }
+        }
+      }
+    },
+    "未收藏" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未收藏"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Favorite"
+          }
+        }
+      }
+    },
+    "未标注" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未标注"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlabeled"
+          }
+        }
+      }
+    },
+    "未检测到人脸" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未检测到人脸"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Faces Detected"
+          }
+        }
+      }
+    },
+    "未知" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未知"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown"
+          }
+        }
+      }
+    },
+    "未知错误" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未知错误"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown Error"
+          }
+        }
+      }
+    },
+    "未读取到模型，请确认 Ollama 已启动。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未读取到模型，请确认 Ollama 已启动。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No models found. Make sure Ollama is running."
+          }
+        }
+      }
+    },
+    "未配置" : {
+      "comment" : "Not Configured",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "未配置"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Configured"
+          }
+        }
+      }
+    },
+    "本地人脸识别" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "本地人脸识别"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Face Recognition"
+          }
+        }
+      }
+    },
+    "本地检测完成，但 Chroma 查询失败：%@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "本地检测完成，但 Chroma 查询失败：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local detection is complete, but the Chroma query failed: %@"
+          }
+        }
+      }
+    },
+    "本机 Chroma HTTP 服务用于保存已确认人物的人脸 embedding，并查询待确认的候选人物。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "本机 Chroma HTTP 服务用于保存已确认人物的人脸 embedding，并查询待确认的候选人物。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The local Chroma HTTP service stores face embeddings for confirmed people and searches for possible matches."
+          }
+        }
+      }
+    },
+    "查看照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "查看照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Photo"
+          }
+        }
+      }
+    },
+    "查询向量不能为空，结果数量必须大于零。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "查询向量不能为空，结果数量必须大于零。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The query embedding cannot be empty and the number of results must be greater than zero."
+          }
+        }
+      }
+    },
+    "标注人物" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "标注人物"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Label Person"
+          }
+        }
+      }
+    },
+    "标注最多的人物" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "标注最多的人物"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most Frequently Labeled People"
+          }
+        }
+      }
+    },
+    "检测人脸" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测人脸"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detect Faces"
+          }
+        }
+      }
+    },
+    "检测到 %lld 张人脸" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测到 %lld 张人脸"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld faces detected"
+          }
+        }
+      }
+    },
+    "检测到 %lld 张人脸。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测到 %lld 张人脸。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detected %lld faces."
+          }
+        }
+      }
+    },
+    "检测到人脸；要查询“可能是某某”，请先在设置中选择本地 GGUF 模型。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测到人脸；要查询“可能是某某”，请先在设置中选择本地 GGUF 模型。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faces detected. To find possible matches, first select a local GGUF model in Settings."
+          }
+        }
+      }
+    },
+    "检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Labeled faces were detected, but no GGUF model is selected in Settings to generate missing embeddings."
+          }
+        }
+      }
+    },
+    "检测当前照片中的人脸" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "检测当前照片中的人脸"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detect faces in the current photo"
+          }
+        }
+      }
+    },
+    "模型名称" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "模型名称"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Name"
+          }
+        }
+      }
+    },
+    "模型路径已保存。打开大图后可执行人脸识别。" : {
+      "comment" : "Model location saved. Open a photo in the viewer to recognize faces.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "模型路径已保存。打开大图后可执行人脸识别。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model location saved. Open a photo in the viewer to recognize faces."
+          }
+        }
+      }
+    },
+    "模型配置已移除。" : {
+      "comment" : "Model configuration removed.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "模型配置已移除。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model configuration removed."
+          }
+        }
+      }
+    },
+    "正在分析照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在分析照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyzing Photo"
+          }
+        }
+      }
+    },
+    "正在加载 Live Photo…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在加载 Live Photo…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading Live Photo…"
+          }
+        }
+      }
+    },
+    "正在导出…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在导出…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting…"
+          }
+        }
+      }
+    },
+    "正在查询可能人物…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在查询可能人物…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching for possible matches…"
+          }
+        }
+      }
+    },
+    "正在计算预计剩余时间…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在计算预计剩余时间…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimating time remaining…"
+          }
+        }
+      }
+    },
+    "正在识别人脸…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在识别人脸…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognizing faces…"
+          }
+        }
+      }
+    },
+    "正在读取已安装模型…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在读取已安装模型…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading installed models…"
+          }
+        }
+      }
+    },
+    "正在读取照片信息…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在读取照片信息…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading photo info…"
+          }
+        }
+      }
+    },
+    "正在递归扫描目录…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "正在递归扫描目录…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning folder recursively…"
+          }
+        }
+      }
+    },
+    "没有匹配的照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有匹配的照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Photos"
+          }
+        }
+      }
+    },
+    "没有可用的批量人脸识别任务" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有可用的批量人脸识别任务"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No batch face recognition task available"
+          }
+        }
+      }
+    },
+    "没有可用的批量识图任务" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有可用的批量识图任务"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No batch image recognition task available"
+          }
+        }
+      }
+    },
+    "没有找到同时符合人物筛选并包含全部关键词的照片。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有找到同时符合人物筛选并包含全部关键词的照片。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No photos match the selected person and all keywords."
+          }
+        }
+      }
+    },
+    "没有检测到人脸。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有检测到人脸。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No faces were detected."
+          }
+        }
+      }
+    },
+    "没有识别到二维码或条码。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有识别到二维码或条码。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No QR codes or barcodes were detected."
+          }
+        }
+      }
+    },
+    "没有识别到文字。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "没有识别到文字。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No text was detected."
+          }
+        }
+      }
+    },
+    "测试连接" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "测试连接"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test Connection"
+          }
+        }
+      }
+    },
+    "浏览、相册、元数据和文件夹都不需要模型。要认人，先在设置里选一个 antelopev2.gguf 兼容的模型文件。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "浏览、相册、元数据和文件夹都不需要模型。要认人，先在设置里选一个 antelopev2.gguf 兼容的模型文件。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browsing, albums, metadata, and folders do not require a model. To identify people, first choose an antelopev2.gguf-compatible model file in Settings."
+          }
+        }
+      }
+    },
+    "添加目录…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "添加目录…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Folder…"
+          }
+        }
+      }
+    },
+    "点击查看大图" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "点击查看大图"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to view full size"
+          }
+        }
+      }
+    },
+    "焦距" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "焦距"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focal Length"
+          }
+        }
+      }
+    },
+    "照片 %lld / %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片 %lld / %lld"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "照片信息" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片信息"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Info"
+          }
+        }
+      }
+    },
+    "照片导出失败" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片导出失败"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Export Failed"
+          }
+        }
+      }
+    },
+    "照片数据库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片数据库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Database"
+          }
+        }
+      }
+    },
+    "照片相册" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片相册"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Library"
+          }
+        }
+      }
+    },
+    "照片缓存、磁盘目录访问书签及图片索引保存在 photo-metadata.sqlite 中；原图不会存入数据库。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "照片缓存、磁盘目录访问书签及图片索引保存在 photo-metadata.sqlite 中；原图不会存入数据库。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo caches, folder access bookmarks, and image indexes are stored in photo-metadata.sqlite. Original files are not stored in the database."
+          }
+        }
+      }
+    },
+    "状态" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "状态"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        }
+      }
+    },
+    "目录 %@ 扫描失败：%@\n旧索引已保留。可重新添加同一目录以恢复授权。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "目录 %@ 扫描失败：%@\n旧索引已保留。可重新添加同一目录以恢复授权。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to scan folder %1$@: %2$@\nThe previous index was retained. Add the same folder again to restore access."
+          }
+        }
+      }
+    },
+    "目录不可用，请重新选择目录。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "目录不可用，请重新选择目录。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder unavailable. Please select it again."
+          }
+        }
+      }
+    },
+    "目录操作失败" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "目录操作失败"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder Operation Failed"
+          }
+        }
+      }
+    },
+    "目标目录中已存在 photo-metadata.sqlite。覆盖后，该数据库的照片缓存、人物标注、磁盘目录及图片索引都将被当前数据库替换。原图不受影响。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "目标目录中已存在 photo-metadata.sqlite。覆盖后，该数据库的照片缓存、人物标注、磁盘目录及图片索引都将被当前数据库替换。原图不受影响。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "photo-metadata.sqlite already exists in the destination. Replacing it will overwrite that database’s photo cache, person labels, folders, and image indexes with the current database. Original files will not be affected."
+          }
+        }
+      }
+    },
+    "目标目录已有数据库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "目标目录已有数据库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database Already Exists in Destination"
+          }
+        }
+      }
+    },
+    "相机" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "相机"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera"
+          }
+        }
+      }
+    },
+    "确定" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "确定"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm"
+          }
+        }
+      }
+    },
+    "确认是 %@（相似度 %lld%%）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "确认是 %@（相似度 %lld%%）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm this is %1$@ (%2$lld%% similarity)"
+          }
+        }
+      }
+    },
+    "磁盘图片（只读）" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "磁盘图片（只读）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disk Image (Read Only)"
+          }
+        }
+      }
+    },
+    "磁盘目录" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "磁盘目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folders"
+          }
+        }
+      }
+    },
+    "秒" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "秒"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "seconds"
+          }
+        }
+      }
+    },
+    "移除" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "移除"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        }
+      }
+    },
+    "等待下一张照片…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "等待下一张照片…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the next photo…"
+          }
+        }
+      }
+    },
+    "简体中文" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "简体中文"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simplified Chinese"
+          }
+        }
+      }
+    },
+    "系统相册" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "系统相册"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Albums"
+          }
+        }
+      }
+    },
+    "约 %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "约 %@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About %@"
+          }
+        }
+      }
+    },
+    "紫色提示是可能人物，请点击人脸确认或重新标注。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "紫色提示是可能人物，请点击人脸确认或重新标注。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purple labels indicate possible matches. Click a face to confirm or relabel it."
+          }
+        }
+      }
+    },
+    "缩小" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "缩小"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom Out"
+          }
+        }
+      }
+    },
+    "缩小照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "缩小照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom Out on Photo"
+          }
+        }
+      }
+    },
+    "覆盖并复制" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "覆盖并复制"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace and Copy"
+          }
+        }
+      }
+    },
+    "识别二维码和条码" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别二维码和条码"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize QR Codes and Barcodes"
+          }
+        }
+      }
+    },
+    "识别人脸并匹配" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别人脸并匹配"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize and Match Faces"
+          }
+        }
+      }
+    },
+    "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognition is complete, but Chroma found no matches within the threshold. Run “Recognize and Match Faces” on labeled photos first to index their face embeddings."
+          }
+        }
+      }
+    },
+    "识别当前照片中的二维码和条码" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别当前照片中的二维码和条码"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize QR codes and barcodes in the current photo"
+          }
+        }
+      }
+    },
+    "识别当前照片中的文字" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别当前照片中的文字"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize text in the current photo"
+          }
+        }
+      }
+    },
+    "识别文字" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "识别文字"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognize Text"
+          }
+        }
+      }
+    },
+    "语言" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "语言"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        }
+      }
+    },
+    "请刷新目录或重新授权。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "请刷新目录或重新授权。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh the folder or grant access again."
+          }
+        }
+      }
+    },
+    "请在系统设置中允许 HomeBuddy 访问照片。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "请在系统设置中允许 HomeBuddy 访问照片。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow HomeBuddy to access your photos in System Settings."
+          }
+        }
+      }
+    },
+    "请求失败" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "请求失败"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request failed"
+          }
+        }
+      }
+    },
+    "请详细描述这张图片中的内容。如果有文字，请准确转录；如果有人物、物体或场景，请分别说明。请使用中文回答。" : {
+      "comment" : "Prompt sent to the local vision model; respond in the app's language.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "请详细描述这张图片中的内容。如果有文字，请准确转录；如果有人物、物体或场景，请分别说明。请使用中文回答。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe the image in detail. Transcribe any visible text accurately, and describe people, objects, and scenes separately. Respond in English."
+          }
+        }
+      }
+    },
+    "跟随系统" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "跟随系统"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow System"
+          }
+        }
+      }
+    },
+    "返回相册" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "返回相册"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to Library"
+          }
+        }
+      }
+    },
+    "还原为适合窗口的大小" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "还原为适合窗口的大小"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset to Fit Window"
+          }
+        }
+      }
+    },
+    "还没允许访问照片图库" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "还没允许访问照片图库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Library Access Not Yet Granted"
+          }
+        }
+      }
+    },
+    "这个人物暂无匹配照片" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "这个人物暂无匹配照片"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Photos for This Person"
+          }
+        }
+      }
+    },
+    "这个相册或人物暂时没有可显示的图片。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "这个相册或人物暂时没有可显示的图片。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are no images to display in this album or for this person."
+          }
+        }
+      }
+    },
+    "进度：%lld / %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "进度：%lld / %lld"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Progress: %1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "选择" : {
+      "comment" : "Choose",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "选择 face-detect GGUF 模型" : {
+      "comment" : "Choose face-detect GGUF Model",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择 face-detect GGUF 模型"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose face-detect GGUF Model"
+          }
+        }
+      }
+    },
+    "选择 face-detect.cpp 兼容的 antelopev2.gguf。模型通过安全书签访问；该预训练权重仅限非商业用途。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择 face-detect.cpp 兼容的 antelopev2.gguf。模型通过安全书签访问；该预训练权重仅限非商业用途。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a face-detect.cpp-compatible antelopev2.gguf model. The model is accessed using a security-scoped bookmark; these pretrained weights are for non-commercial use only."
+          }
+        }
+      }
+    },
+    "选择一个相册" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择一个相册"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an Album"
+          }
+        }
+      }
+    },
+    "选择图片目录，将递归扫描其中的图片（不会复制或修改原图）。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择图片目录，将递归扫描其中的图片（不会复制或修改原图）。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a photo folder to scan recursively. Original files will not be copied or modified."
+          }
+        }
+      }
+    },
+    "选择模型…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择模型…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Model…"
+          }
+        }
+      }
+    },
+    "选择照片数据库存储目录" : {
+      "comment" : "Choose Photo Database Storage Folder",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择照片数据库存储目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Photo Database Storage Folder"
+          }
+        }
+      }
+    },
+    "选择目录…" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择目录…"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Folder…"
+          }
+        }
+      }
+    },
+    "选择目录即授予 HomeBuddy 对该目录的读写权限。" : {
+      "comment" : "Selecting a folder grants HomeBuddy read and write access to it.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "选择目录即授予 HomeBuddy 对该目录的读写权限。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecting a folder grants HomeBuddy read and write access to it."
+          }
+        }
+      }
+    },
+    "递归重新扫描当前目录" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "递归重新扫描当前目录"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rescan the current folder and its subfolders"
+          }
+        }
+      }
+    },
+    "通用" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "通用"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General"
+          }
+        }
+      }
+    },
+    "通过目录选择器确认后，HomeBuddy 才能获得该目录的访问权限。隐藏目录（例如 ~/.homebuddy）也可以选择。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "通过目录选择器确认后，HomeBuddy 才能获得该目录的访问权限。隐藏目录（例如 ~/.homebuddy）也可以选择。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeBuddy can access a folder only after you select it in the folder picker. Hidden folders (such as ~/.homebuddy) can also be selected."
+          }
+        }
+      }
+    },
+    "重新扫描" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "重新扫描"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rescan"
+          }
+        }
+      }
+    },
+    "重新读取系统照片图库" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "重新读取系统照片图库"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reload the System Photo Library"
+          }
+        }
+      }
+    },
+    "重试" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "重试"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        }
+      }
+    },
+    "镜头" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "镜头"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lens"
+          }
+        }
+      }
+    },
+    "隐藏" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "隐藏"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide"
+          }
+        }
+      }
+    },
+    "隐藏人脸方框" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "隐藏人脸方框"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Face Boxes"
+          }
+        }
+      }
+    },
+    "隐藏人脸方框（F）" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "隐藏人脸方框（F）"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Face Boxes (F)"
+          }
+        }
+      }
+    },
+    "预计剩余时间：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "预计剩余时间：%@"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated time remaining: %@"
+          }
+        }
+      }
+    },
+    "默认使用本机 Ollama 服务。模型名称也可以手动输入。" : {
+      "localizations" : {
+        "zh-Hans" : {
+
+          "stringUnit" : {
+
+            "state" : "translated",
+
+            "value" : "默认使用本机 Ollama 服务。模型名称也可以手动输入。"
+
+          }
+
+        },
+
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses the local Ollama service by default. You can also enter a model name manually."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.3"
+}

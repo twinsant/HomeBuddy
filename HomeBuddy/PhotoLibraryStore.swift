@@ -39,7 +39,7 @@ struct PhotoAlbum: Identifiable, Hashable {
 
     init(collection: PHAssetCollection) {
         id = collection.localIdentifier
-        title = collection.localizedTitle ?? "未命名相册"
+        title = collection.localizedTitle ?? NSLocalizedString("未命名相册", comment: "")
         isAllPhotos = collection.assetCollectionSubtype == .smartAlbumUserLibrary
         isFaceAlbum = false
         isRecents = collection.assetCollectionSubtype == .smartAlbumRecentlyAdded
@@ -48,7 +48,7 @@ struct PhotoAlbum: Identifiable, Hashable {
     static var faceAlbum: PhotoAlbum {
         PhotoAlbum(
             id: "virtual:faces",
-            title: "人物",
+            title: NSLocalizedString("人物", comment: ""),
             isAllPhotos: false,
             isFaceAlbum: true,
             isRecents: false
@@ -123,6 +123,7 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
     @Published private(set) var albums: [PhotoAlbum] = [.faceAlbum]
     @Published private(set) var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @Published private(set) var photoCounts: [String: Int] = [:]
+    @Published private(set) var revision = 0
     private var photoCountRequestID = 0
     private var isObservingPhotoLibrary = false
 
@@ -222,6 +223,7 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
                 return left.title.localizedStandardCompare(right.title) == .orderedAscending
             }
         albums = [PhotoAlbum.faceAlbum] + systemAlbums
+        revision += 1
         loadPhotoCounts(for: systemAlbums)
 
         if !isObservingPhotoLibrary {
@@ -601,6 +603,71 @@ final class PhotoMetadataCache {
         }
     }
 
+    func pendingRecognitionCounts(for assets: [LibraryAsset]) async -> (ollama: Int, faces: Int) {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                guard let database, !assets.isEmpty else {
+                    continuation.resume(returning: (assets.count, assets.count))
+                    return
+                }
+
+                let ollamaSQL = "SELECT ollama_text FROM photo_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? LIMIT 1;"
+                let facesSQL = "SELECT 1 FROM face_detection_results WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? AND detector_version IN (?, ?) LIMIT 1;"
+                var ollamaStatement: OpaquePointer?
+                var facesStatement: OpaquePointer?
+                guard sqlite3_prepare_v2(database, ollamaSQL, -1, &ollamaStatement, nil) == SQLITE_OK,
+                      sqlite3_prepare_v2(database, facesSQL, -1, &facesStatement, nil) == SQLITE_OK,
+                      let ollamaStatement, let facesStatement else {
+                    if let ollamaStatement { sqlite3_finalize(ollamaStatement) }
+                    if let facesStatement { sqlite3_finalize(facesStatement) }
+                    continuation.resume(returning: (assets.count, assets.count))
+                    return
+                }
+                defer {
+                    sqlite3_finalize(ollamaStatement)
+                    sqlite3_finalize(facesStatement)
+                }
+
+                var ollamaPending = 0
+                var facesPending = 0
+                for asset in assets {
+                    guard accepts(asset) else {
+                        ollamaPending += 1
+                        facesPending += 1
+                        continue
+                    }
+
+                    let modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+                    let width = Int32(asset.pixelWidth)
+                    let height = Int32(asset.pixelHeight)
+                    bindText(asset.localIdentifier, to: ollamaStatement, at: 1)
+                    sqlite3_bind_double(ollamaStatement, 2, modificationTime)
+                    sqlite3_bind_int(ollamaStatement, 3, width)
+                    sqlite3_bind_int(ollamaStatement, 4, height)
+                    let ollamaStep = sqlite3_step(ollamaStatement)
+                    let hasOllamaText = ollamaStep == SQLITE_ROW
+                        && sqlite3_column_type(ollamaStatement, 0) != SQLITE_NULL
+                        && (sqlite3_column_text(ollamaStatement, 0).map { String(cString: $0).isEmpty == false } ?? false)
+                    if !hasOllamaText { ollamaPending += 1 }
+                    sqlite3_reset(ollamaStatement)
+                    sqlite3_clear_bindings(ollamaStatement)
+
+                    bindText(asset.localIdentifier, to: facesStatement, at: 1)
+                    sqlite3_bind_double(facesStatement, 2, modificationTime)
+                    sqlite3_bind_int(facesStatement, 3, width)
+                    sqlite3_bind_int(facesStatement, 4, height)
+                    bindText(FaceDetectionResult.currentDetectorVersion, to: facesStatement, at: 5)
+                    bindText(FaceDetectionResult.legacyDetectorVersion, to: facesStatement, at: 6)
+                    if sqlite3_step(facesStatement) != SQLITE_ROW { facesPending += 1 }
+                    sqlite3_reset(facesStatement)
+                    sqlite3_clear_bindings(facesStatement)
+                }
+
+                continuation.resume(returning: (ollamaPending, facesPending))
+            }
+        }
+    }
+
     private func accepts(_ asset: LibraryAsset) -> Bool {
         guard databaseURLValue == asset.databaseURL else { return false }
         guard case .disk(let directory, let image) = asset.source else { return true }
@@ -844,9 +911,9 @@ final class PhotoMetadataCache {
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return PhotoMetadata(
             fileType: text(from: statement, at: 0),
-            fileSize: text(from: statement, at: 1) ?? "未知",
-            pixelSize: text(from: statement, at: 2) ?? "未知",
-            creationDate: text(from: statement, at: 3) ?? "未知",
+            fileSize: text(from: statement, at: 1) ?? AppLocalization.localizedString("未知"),
+            pixelSize: text(from: statement, at: 2) ?? AppLocalization.localizedString("未知"),
+            creationDate: text(from: statement, at: 3) ?? AppLocalization.localizedString("未知"),
             metadataUpdatedAt: sqlite3_column_type(statement, 4) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
             camera: text(from: statement, at: 5),
             lens: text(from: statement, at: 6),

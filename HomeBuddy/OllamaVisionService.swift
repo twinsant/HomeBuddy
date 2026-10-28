@@ -61,13 +61,13 @@ struct OllamaVisionService {
         var errorDescription: String? {
             switch self {
             case .invalidURL:
-                return "Ollama 地址无效，请在设置中检查地址。"
+                return AppLocalization.localizedString("Ollama 地址无效，请在设置中检查地址。", comment: "")
             case .invalidResponse:
-                return "Ollama 返回了无法解析的响应。"
+                return AppLocalization.localizedString("Ollama 返回了无法解析的响应。", comment: "")
             case .server(let message):
-                return "Ollama：\(message)"
+                return String.localizedStringWithFormat(AppLocalization.localizedString("Ollama：%@", comment: ""), message)
             case .emptyResponse:
-                return "Ollama 没有返回识别结果。"
+                return AppLocalization.localizedString("Ollama 没有返回识别结果。", comment: "")
             }
         }
     }
@@ -82,7 +82,10 @@ struct OllamaVisionService {
 
         let body = GenerateRequest(
             model: configuration.model,
-            prompt: "请详细描述这张图片中的内容。如果有文字，请准确转录；如果有人物、物体或场景，请分别说明。请使用中文回答。",
+            prompt: AppLocalization.localizedString(
+                "请详细描述这张图片中的内容。如果有文字，请准确转录；如果有人物、物体或场景，请分别说明。请使用中文回答。",
+                comment: "Prompt sent to the local vision model; respond in the app's language."
+            ),
             images: [imageData.base64EncodedString()],
             stream: false
         )

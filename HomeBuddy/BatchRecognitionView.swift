@@ -158,7 +158,9 @@ final class BatchRecognitionModel: ObservableObject {
                     recordProcessingTime(since: processingStartedAt)
                 }
                 PhotoMetadataCache.shared.recordOllamaFailure(for: asset)
-                failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
+                failures.append(String.localizedStringWithFormat(
+                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
+                ))
             }
         }
 
@@ -239,7 +241,7 @@ final class BatchRecognitionModel: ObservableObject {
         case imageUnavailable
 
         var errorDescription: String? {
-            "无法读取照片原始数据。"
+            AppLocalization.localizedString("无法读取照片原始数据。", comment: "")
         }
     }
 }
@@ -314,7 +316,7 @@ struct BatchRecognitionView: View {
                             Text("当前处理")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(model.currentName.isEmpty ? "等待下一张照片…" : model.currentName)
+                            Text(model.currentName.isEmpty ? AppLocalization.localizedString("等待下一张照片…", comment: "") : model.currentName)
                                 .font(.caption)
                                 .foregroundStyle(model.currentName.isEmpty ? .secondary : .primary)
                                 .lineLimit(1)
@@ -400,20 +402,13 @@ struct BatchRecognitionView: View {
 
 private extension TimeInterval {
     var formattedDuration: String {
-        var seconds = max(Int(self.rounded()), 1)
-        let days = seconds / 86_400
-        seconds %= 86_400
-        let hours = seconds / 3_600
-        seconds %= 3_600
-        let minutes = seconds / 60
-        seconds %= 60
-
-        var parts: [String] = []
-        if days > 0 { parts.append("\(days) 天") }
-        if hours > 0 { parts.append("\(hours) 小时") }
-        if minutes > 0 { parts.append("\(minutes) 分钟") }
-        if seconds > 0 && parts.count < 2 { parts.append("\(seconds) 秒") }
-        return "约 " + parts.joined(separator: " ")
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.day, .hour, .minute, .second]
+        formatter.unitsStyle = .full
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = .dropAll
+        let duration = formatter.string(from: max(self, 1)) ?? ""
+        return String.localizedStringWithFormat(AppLocalization.localizedString("约 %@", comment: ""), duration)
     }
 }
 
@@ -526,7 +521,9 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 break
             } catch {
                 guard runGeneration == generation else { return }
-                failures.append("\(asset.localIdentifier)：\(error.localizedDescription)")
+                failures.append(String.localizedStringWithFormat(
+                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
+                ))
             }
         }
 
@@ -721,13 +718,13 @@ final class BatchFaceRecognitionModel: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .imageUnavailable:
-                "无法读取照片或执行人脸检测。"
+                AppLocalization.localizedString("无法读取照片或执行人脸检测。", comment: "")
             case .cacheUnavailable:
-                "人脸检测结果未能写入 SQLite。"
+                AppLocalization.localizedString("人脸检测结果未能写入 SQLite。", comment: "")
             case .modelNotConfigured:
-                "检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。"
+                AppLocalization.localizedString("检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。", comment: "")
             case .invalidEmbedding:
-                "人脸模型返回了无效的 512 维 embedding。"
+                AppLocalization.localizedString("人脸模型返回了无效的 512 维 embedding。", comment: "")
             }
         }
     }

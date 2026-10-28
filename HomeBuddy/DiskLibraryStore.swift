@@ -125,7 +125,7 @@ nonisolated struct DiskImage: Identifiable, Equatable, Sendable {
 nonisolated enum DiskLibraryError: LocalizedError {
     case message(String)
     var errorDescription: String? {
-        switch self { case .message(let text): return text }
+        switch self { case .message(let text): return AppLocalization.localizedString(text, comment: "") }
     }
 }
 
@@ -459,7 +459,7 @@ final class DiskLibraryStore: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "选择图片目录，将递归扫描其中的图片（不会复制或修改原图）。"
+        panel.message = AppLocalization.localizedString("选择图片目录，将递归扫描其中的图片（不会复制或修改原图）。", comment: "")
         guard panel.runModal() == .OK, let selectedURL = panel.url else { return nil }
         let url = selectedURL.resolvingSymlinksInPath().standardizedFileURL
         do {
@@ -499,7 +499,12 @@ final class DiskLibraryStore: ObservableObject {
             revision += 1
             await reload()
         } catch is CancellationError { }
-        catch { errorMessage = "\(directory.title)：\(error.localizedDescription)\n旧索引已保留。可重新添加同一目录以恢复授权。" }
+        catch {
+            errorMessage = String.localizedStringWithFormat(
+                AppLocalization.localizedString("目录 %@ 扫描失败：%@\n旧索引已保留。可重新添加同一目录以恢复授权。", comment: ""),
+                directory.title, error.localizedDescription
+            )
+        }
     }
 
     func remove(_ directory: DiskDirectory) async {

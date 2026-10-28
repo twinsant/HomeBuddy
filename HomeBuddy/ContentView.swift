@@ -22,6 +22,8 @@ struct ContentView: View {
     @State private var recognitionRevision = 0
     @State private var databaseRevision = 0
     @State private var faceModelReady = FaceRecognitionConfiguration.modelURL() != nil
+    @State private var pendingOllamaCount: Int?
+    @State private var pendingFaceCount: Int?
 
     var body: some View {
         NavigationSplitView {
@@ -84,13 +86,12 @@ struct ContentView: View {
                     Label {
                         Text("Ollama 批量识图")
                     } icon: {
-                        BatchRecognitionToolbarIcon(
-                            isAnimating: batchRecognitionModels.activeModel?.phase == .running
-                        )
+                        ollamaToolbarIcon
                     }
                 }
                 .disabled((selectedDirectory == nil && selectedAlbum == nil && batchRecognitionModels.activeModel == nil)
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
+                .accessibilityIdentifier("batchOllamaRecognition")
                 .help("打开 Ollama 批量识图任务")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -102,14 +103,13 @@ struct ContentView: View {
                     Label {
                         Text("批量人脸识别")
                     } icon: {
-                        BatchFaceRecognitionToolbarIcon(
-                            isAnimating: batchFaceRecognitionModels.activeModel?.phase == .running
-                        )
+                        faceRecognitionToolbarIcon
                     }
                 }
                 .disabled(!faceModelReady
                           || (selectedDirectory == nil && selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
+                .accessibilityIdentifier("batchFaceRecognition")
                 .help(faceModelReady ? "打开批量人脸识别任务" : "先在设置里选择人脸模型文件")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -145,6 +145,15 @@ struct ContentView: View {
         }
         .onChange(of: photoLibrary.albums) { _, _ in repairSelection() }
         .onChange(of: diskLibrary.directories) { _, _ in repairSelection() }
+        .task(id: pendingCountTaskKey) {
+            await refreshPendingRecognitionCounts()
+        }
+        .onChange(of: batchRecognitionModels.activeModel == nil) { wasIdle, isIdle in
+            if !wasIdle && isIdle { Task { await refreshPendingRecognitionCounts() } }
+        }
+        .onChange(of: batchFaceRecognitionModels.activeModel == nil) { wasIdle, isIdle in
+            if !wasIdle && isIdle { Task { await refreshPendingRecognitionCounts() } }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyDatabaseDidChange"))) { _ in
             batchRecognitionModels.activeModel?.stop()
             batchFaceRecognitionModels.activeModel?.pause()
@@ -158,6 +167,10 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
             recognitionRevision += 1
+            if batchRecognitionModels.activeModel?.phase != .running
+                && batchFaceRecognitionModels.activeModel?.phase != .running {
+                Task { await refreshPendingRecognitionCounts() }
+            }
         }
         .alert("目录操作失败", isPresented: Binding(
             get: { diskLibrary.errorMessage != nil },
@@ -185,6 +198,52 @@ struct ContentView: View {
             PhotoPermissionView(openSettings: openPhotoSettings)
         } else {
             ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
+        }
+    }
+
+    private var ollamaToolbarIcon: some View {
+        BatchRecognitionToolbarIcon(isAnimating: batchRecognitionModels.activeModel?.phase == .running)
+            .overlay(alignment: .topTrailing) {
+                ollamaPendingBadge
+            }
+    }
+
+    @ViewBuilder
+    private var ollamaPendingBadge: some View {
+        if let model = batchRecognitionModels.activeModel {
+            ModelPendingCountBadge(
+                model: model,
+                pendingCount: { $0.remainingCount },
+                fallbackCount: pendingOllamaCount,
+                refreshWhenIdle: { Task { await refreshPendingRecognitionCounts() } }
+            )
+            .offset(x: 8, y: -7)
+        } else {
+            ToolbarPendingCountBadge(count: pendingOllamaCount ?? 0)
+                .offset(x: 8, y: -7)
+        }
+    }
+
+    private var faceRecognitionToolbarIcon: some View {
+        BatchFaceRecognitionToolbarIcon(isAnimating: batchFaceRecognitionModels.activeModel?.phase == .running)
+            .overlay(alignment: .topTrailing) {
+                faceRecognitionPendingBadge
+            }
+    }
+
+    @ViewBuilder
+    private var faceRecognitionPendingBadge: some View {
+        if let model = batchFaceRecognitionModels.activeModel {
+            ModelPendingCountBadge(
+                model: model,
+                pendingCount: { max($0.assets.count - $0.completed, 0) },
+                fallbackCount: pendingFaceCount,
+                refreshWhenIdle: { Task { await refreshPendingRecognitionCounts() } }
+            )
+            .offset(x: 8, y: -7)
+        } else {
+            ToolbarPendingCountBadge(count: pendingFaceCount ?? 0)
+                .offset(x: 8, y: -7)
         }
     }
 
@@ -218,6 +277,29 @@ struct ContentView: View {
         }
         if let album = selectedAlbum { return (album.id, photoLibrary.assets(for: album)) }
         return nil
+    }
+
+    private var pendingCountTaskKey: String {
+        "\(selectedAlbumID ?? "")|\(diskLibrary.revision)|\(photoLibrary.revision)|\(databaseRevision)"
+    }
+
+    private func refreshPendingRecognitionCounts() async {
+        let requestKey = pendingCountTaskKey
+        do {
+            guard let selection = try await selectedAssets() else {
+                pendingOllamaCount = 0
+                pendingFaceCount = 0
+                return
+            }
+            let counts = await PhotoMetadataCache.shared.pendingRecognitionCounts(for: selection.assets)
+            guard !Task.isCancelled, requestKey == pendingCountTaskKey else { return }
+            pendingOllamaCount = counts.ollama
+            pendingFaceCount = counts.faces
+        } catch {
+            guard !Task.isCancelled, requestKey == pendingCountTaskKey else { return }
+            pendingOllamaCount = nil
+            pendingFaceCount = nil
+        }
     }
 
     private func showBatchRecognition() async {
@@ -278,6 +360,40 @@ private struct BatchRecognitionToolbarIcon: View {
                     : .default,
                 value: isAnimating
             )
+    }
+}
+
+private struct ModelPendingCountBadge<Model: ObservableObject>: View {
+    @ObservedObject var model: Model
+    let pendingCount: (Model) -> Int
+    let fallbackCount: Int?
+    let refreshWhenIdle: () -> Void
+
+    var body: some View {
+        let isRunning = (model as? BatchRecognitionModel)?.phase == .running
+            || (model as? BatchFaceRecognitionModel)?.phase == .running
+        ToolbarPendingCountBadge(count: isRunning ? pendingCount(model) : (fallbackCount ?? pendingCount(model)))
+            .onChange(of: isRunning) { _, running in
+                if !running { refreshWhenIdle() }
+            }
+    }
+}
+
+private struct ToolbarPendingCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        if count > 0 {
+            Text(count > 99 ? "99+" : "\(count)")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .fixedSize()
+                .frame(minWidth: count > 9 ? 24 : 18, minHeight: 18)
+                .background(Color.red, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white, lineWidth: 1))
+                .accessibilityLabel("尚有 \(count) 项待处理")
+                .fixedSize()
+        }
     }
 }
 

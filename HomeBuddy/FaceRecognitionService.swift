@@ -59,11 +59,11 @@ actor FaceRecognitionService {
         var errorDescription: String? {
             switch self {
             case .modelNotConfigured:
-                return "尚未选择 face-detect GGUF 模型。请到设置中选择 antelopev2.gguf。"
+                return AppLocalization.localizedString("尚未选择 face-detect GGUF 模型。请到设置中选择 antelopev2.gguf。", comment: "")
             case .modelUnavailable(let message):
-                return message
+                return AppLocalization.localizedString(message, comment: "")
             case .invalidImage:
-                return "无法读取当前照片用于人脸识别。"
+                return AppLocalization.localizedString("无法读取当前照片用于人脸识别。", comment: "")
             }
         }
     }
@@ -116,7 +116,7 @@ actor FaceRecognitionService {
 
         let hasAccess = url.startAccessingSecurityScopedResource()
         guard hasAccess else {
-            throw ServiceError.modelUnavailable("无法访问模型文件。请在设置中重新选择模型文件。")
+            throw ServiceError.modelUnavailable(AppLocalization.localizedString("无法访问模型文件。请在设置中重新选择模型文件。", comment: ""))
         }
 
         let loadedBridge: HBFaceRecognitionBridge

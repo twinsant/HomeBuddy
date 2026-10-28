@@ -89,13 +89,18 @@ struct ChromaService {
         var errorDescription: String? {
             switch self {
             case .invalidURL:
-                return "Chroma 地址无效，请在设置中检查地址。"
+                return AppLocalization.localizedString("Chroma 地址无效，请在设置中检查地址。", comment: "")
             case .invalidResponse:
-                return "Chroma 返回了无法解析的响应。"
+                return AppLocalization.localizedString("Chroma 返回了无法解析的响应。", comment: "")
             case .server(let statusCode, let message):
-                return "Chroma（HTTP \(statusCode)）：\(message)"
+                return String.localizedStringWithFormat(
+                    AppLocalization.localizedString("Chroma（HTTP %lld）：%@", comment: ""), statusCode, message
+                )
             case .invalidConfiguration(let message):
-                return "Chroma 配置无效：\(message)"
+                return String.localizedStringWithFormat(
+                    AppLocalization.localizedString("Chroma 配置无效：%@", comment: ""),
+                    AppLocalization.localizedString(message, comment: "")
+                )
             }
         }
     }
@@ -135,7 +140,12 @@ struct ChromaService {
             throw ServiceError.invalidResponse
         }
         guard let collection = collections.first(where: { $0.name == configuration.normalizedCollection }) else {
-            throw ServiceError.server(statusCode: response.statusCode, message: "找不到 collection：\(configuration.normalizedCollection)")
+            throw ServiceError.server(
+                statusCode: response.statusCode,
+                message: String.localizedStringWithFormat(
+                    AppLocalization.localizedString("找不到 collection：%@", comment: ""), configuration.normalizedCollection
+                )
+            )
         }
         return collection.id
     }
@@ -283,7 +293,7 @@ struct ChromaService {
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { throw ServiceError.invalidResponse }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "请求失败"
+            let message = String(data: data, encoding: .utf8) ?? AppLocalization.localizedString("请求失败", comment: "")
             throw ServiceError.server(statusCode: httpResponse.statusCode, message: message)
         }
         return (data, httpResponse)

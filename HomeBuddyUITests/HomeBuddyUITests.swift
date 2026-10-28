@@ -38,7 +38,7 @@ final class HomeBuddyUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let thumbnail = app.buttons.matching(NSPredicate(format: "label == %@", "查看照片")).firstMatch
+        let thumbnail = app.buttons["photoThumbnail-0"]
         guard thumbnail.waitForExistence(timeout: 15) else {
             throw XCTSkip("需要已授权且当前相册至少有一张照片的测试环境")
         }
@@ -47,7 +47,7 @@ final class HomeBuddyUITests: XCTestCase {
             thumbnail.click()
             let back = app.buttons["backToPhotoLibrary"]
             XCTAssertTrue(back.waitForExistence(timeout: 5))
-            let resetZoom = app.buttons["100%"]
+            let resetZoom = app.buttons["zoomPercentage"]
             XCTAssertTrue(resetZoom.waitForExistence(timeout: 5))
             let imageLoaded = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "enabled == true"), object: resetZoom
@@ -55,7 +55,7 @@ final class HomeBuddyUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [imageLoaded], timeout: 30), .completed)
 
             for _ in 0..<steps {
-                app.buttons["放大"].click()
+                app.buttons["zoomIn"].click()
             }
             XCTAssertTrue(app.buttons["\(100 + steps * 25)%"].waitForExistence(timeout: 5))
 
@@ -77,7 +77,7 @@ final class HomeBuddyUITests: XCTestCase {
         }
         firstThumbnail.click()
 
-        let next = app.buttons["下一张"]
+        let next = app.buttons["nextPhoto"]
         for _ in 0..<15 {
             guard next.isEnabled else {
                 throw XCTSkip("需要当前相册至少有 16 张照片")
@@ -106,22 +106,22 @@ final class HomeBuddyUITests: XCTestCase {
         guard thumbnail.waitForExistence(timeout: 15) else {
             throw XCTSkip("当前磁盘目录需要至少一张已索引图片")
         }
-        XCTAssertTrue(app.buttons["Ollama 批量识图"].isEnabled)
-        XCTAssertTrue(app.buttons["批量人脸识别"].isEnabled)
+        XCTAssertTrue(app.buttons["batchOllamaRecognition"].isEnabled)
+        XCTAssertTrue(app.buttons["batchFaceRecognition"].isEnabled)
         thumbnail.click()
         let back = app.buttons["backToPhotoLibrary"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
-        let zoom = app.buttons["100%"]
+        let zoom = app.buttons["zoomPercentage"]
         XCTAssertTrue(zoom.waitForExistence(timeout: 5))
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: zoom)
         XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 30), .completed)
-        for tool in ["复制图片", "识别文字", "识别二维码和条码", "检测人脸", "Ollama 识图", "照片信息"] {
-            XCTAssertTrue(app.buttons[tool].exists, "磁盘查看器缺少工具：\(tool)")
+        for tool in ["copyImage", "recognizeText", "recognizeBarcodes", "detectFaces", "ollamaImageRecognition", "photoInfo"] {
+            XCTAssertTrue(app.buttons[tool].exists, "照片查看器缺少工具：\(tool)")
         }
-        app.buttons["识别文字"].click()
-        XCTAssertTrue(app.staticTexts["文字识别结果"].waitForExistence(timeout: 30))
-        app.buttons["完成"].click()
-        for _ in 0..<16 { app.buttons["放大"].click() }
+        app.buttons["recognizeText"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["analysisResultTitle"].waitForExistence(timeout: 30))
+        app.buttons["completeAnalysis"].click()
+        for _ in 0..<16 { app.buttons["zoomIn"].click() }
         XCTAssertTrue(app.buttons["500%"].exists)
         back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         XCTAssertTrue(back.waitForNonExistence(timeout: 5))
