@@ -449,12 +449,17 @@ final class BatchFaceRecognitionModel: ObservableObject {
 
     let assets: [LibraryAsset]
     @Published private(set) var completed = 0
+    @Published private(set) var prepared = 0
     @Published private(set) var currentName = ""
+    @Published private(set) var isPreparing = true
     @Published private(set) var phase: Phase = .ready
     @Published private(set) var failures: [String] = []
 
     private var task: Task<Void, Never>?
     private var countedAssetIDs = Set<String>()
+    private var preparedAssetIDs = Set<String>()
+    private var pendingCandidateEmbeddings: [String: [FaceEmbedding]] = [:]
+    private var chromaCollection: (configuration: ChromaConfiguration, id: String)?
     private var runGeneration = UUID()
 
     init(assets: [LibraryAsset]) {
@@ -466,12 +471,26 @@ final class BatchFaceRecognitionModel: ObservableObject {
     }
 
     var progress: Double {
-        assets.isEmpty ? 1 : Double(completed) / Double(assets.count)
+        guard !assets.isEmpty else { return 1 }
+        let totalSteps = Double(assets.count * 2)
+        let currentStep = phase == .running && !currentName.isEmpty ? 1.0 : 0
+        return min((Double(prepared) + (isPreparing ? currentStep : Double(completed) + currentStep)) / totalSteps, 1)
+    }
+
+    var stageProgressCount: Int {
+        let currentStep = phase == .running && !currentName.isEmpty ? 1 : 0
+        return min((isPreparing ? prepared : completed) + currentStep, assets.count)
+    }
+
+    var stageRemaining: Int {
+        max(assets.count - stageProgressCount, 0)
     }
 
     func startOrResume() {
         guard phase != .running, completed < assets.count else { return }
         phase = .running
+        isPreparing = preparedAssetIDs.count < assets.count
+        isPreparing = preparedAssetIDs.count < assets.count
         let generation = UUID()
         runGeneration = generation
         task = Task { [weak self] in
@@ -488,33 +507,81 @@ final class BatchFaceRecognitionModel: ObservableObject {
 
     private func run(generation: UUID) async {
         failures = []
+        var preparationFailed = false
+
+        // Index confirmed faces across the entire selection before querying candidates.
+        for asset in assets where !Task.isCancelled {
+            let assetID = asset.localIdentifier
+            if preparedAssetIDs.contains(assetID) { continue }
+            currentName = asset.localIdentifier
+            do {
+                let result: FaceDetectionResult
+                var suppliedPhoto: (data: Data, orientation: CGImagePropertyOrientation)?
+                if let cached = await cachedResult(for: asset) {
+                    result = cached
+                } else {
+                    let image = try await imageData(for: asset)
+                    suppliedPhoto = image
+                    try Task.checkCancellation()
+                    let detected = try await Task.detached(priority: .userInitiated) {
+                        try Self.detectFaces(in: image.data, orientation: image.orientation)
+                    }.value
+                    try Task.checkCancellation()
+                    await save(detected, for: asset)
+                    guard let savedResult = await cachedResult(for: asset) else {
+                        throw FaceRecognitionError.cacheUnavailable
+                    }
+                    result = savedResult
+                }
+
+                if result.faces.contains(where: { $0.personID != nil }) {
+                    _ = try await indexEmbeddingsAndFindCandidates(
+                        in: result, for: asset, indexConfirmedFaces: true, findCandidates: false,
+                        photo: suppliedPhoto
+                    )
+                }
+                try Task.checkCancellation()
+                guard runGeneration == generation else { return }
+                if preparedAssetIDs.insert(assetID).inserted {
+                    prepared = preparedAssetIDs.count
+                }
+            } catch is CancellationError {
+                break
+            } catch {
+                guard runGeneration == generation else { return }
+                preparationFailed = true
+                failures.append(String.localizedStringWithFormat(
+                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
+                ))
+            }
+        }
+
+        guard runGeneration == generation else { return }
+        guard !Task.isCancelled else {
+            task = nil
+            phase = .paused
+            return
+        }
+        guard !preparationFailed else {
+            task = nil
+            phase = .paused
+            return
+        }
+        isPreparing = false
+
+        // Now every confirmed person in the selection is available to Chroma queries.
         for asset in assets where !Task.isCancelled {
             if countedAssetIDs.contains(asset.localIdentifier) { continue }
             currentName = asset.localIdentifier
             do {
-                // Detection cache hits still need an embedding backfill for assigned faces.
-                if let cached = await cachedResult(for: asset) {
-                    try Task.checkCancellation()
-                    try await indexMissingEmbeddings(in: cached, for: asset)
-                    try Task.checkCancellation()
-                    guard runGeneration == generation else { return }
-                    markCompleted(asset)
-                    continue
-                }
-
-                let image = try await imageData(for: asset)
-                try Task.checkCancellation()
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try Self.detectFaces(in: image.data, orientation: image.orientation)
-                }.value
-                try Task.checkCancellation()
-                await save(result, for: asset)
-                try Task.checkCancellation()
-                guard let savedResult = await cachedResult(for: asset) else {
+                guard let cached = await cachedResult(for: asset) else {
                     throw FaceRecognitionError.cacheUnavailable
                 }
-                try await indexMissingEmbeddings(in: savedResult, for: asset, photo: image)
+                let updated = try await indexEmbeddingsAndFindCandidates(
+                    in: cached, for: asset, indexConfirmedFaces: false, findCandidates: true
+                )
                 try Task.checkCancellation()
+                if updated != cached { await save(updated, for: asset) }
                 guard runGeneration == generation else { return }
                 markCompleted(asset)
             } catch is CancellationError {
@@ -560,99 +627,155 @@ final class BatchFaceRecognitionModel: ObservableObject {
         }
     }
 
-    private func indexMissingEmbeddings(
+    private func indexEmbeddingsAndFindCandidates(
         in result: FaceDetectionResult,
         for asset: LibraryAsset,
+        indexConfirmedFaces: Bool,
+        findCandidates: Bool,
         photo suppliedPhoto: (data: Data, orientation: CGImagePropertyOrientation)? = nil
-    ) async throws {
-        let confirmedFaces = result.faces.enumerated().compactMap { index, face -> (Int, String)? in
-            guard let personID = face.personID else { return nil }
-            return (index, personID)
-        }
-        guard !confirmedFaces.isEmpty else { return }
-
-        guard FaceRecognitionConfiguration.modelURL() != nil else {
-            throw FaceRecognitionError.modelNotConfigured
+    ) async throws -> FaceDetectionResult {
+        guard !result.faces.isEmpty else { return result }
+        let hasConfirmedFaces = result.faces.contains { $0.personID != nil }
+        let hasUnconfirmedFaces = result.faces.contains { $0.personID == nil }
+        guard (indexConfirmedFaces && hasConfirmedFaces) || (findCandidates && hasUnconfirmedFaces) else {
+            return result
         }
 
-        let configuration = ChromaConfiguration.current
-        let collectionID = try await ChromaService.shared.createCollectionIfNeeded(configuration: configuration)
         let personRecords = await people()
+        guard !personRecords.isEmpty else { return result }
+        guard FaceRecognitionConfiguration.modelURL() != nil else { throw FaceRecognitionError.modelNotConfigured }
+        let configuration = ChromaConfiguration.current
+        let collectionID = try await collectionID(for: configuration)
         let nameByID = Dictionary(uniqueKeysWithValues: personRecords.map { ($0.id, $0.displayName) })
-        let photo: (data: Data, orientation: CGImagePropertyOrientation)
-        if let suppliedPhoto {
-            photo = suppliedPhoto
+        let embeddings: [FaceEmbedding]
+        if findCandidates, let pending = pendingCandidateEmbeddings[asset.localIdentifier] {
+            embeddings = pending
         } else {
-            photo = try await imageData(for: asset)
+            let photo: (data: Data, orientation: CGImagePropertyOrientation)
+            if let suppliedPhoto {
+                photo = suppliedPhoto
+            } else {
+                photo = try await imageData(for: asset)
+            }
+            try Task.checkCancellation()
+            guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
+                  let uprightImage = CGImageSourceCreateThumbnailAtIndex(
+                    source,
+                    0,
+                    [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 2400
+                    ] as CFDictionary
+                  )
+            else { throw FaceRecognitionError.imageUnavailable }
+            embeddings = try await FaceRecognitionService.shared.recognize(image: uprightImage)
+            try Task.checkCancellation()
         }
-        try Task.checkCancellation()
-        guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
-              let uprightImage = CGImageSourceCreateThumbnailAtIndex(
-                source,
-                0,
-                [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 2400
-                ] as CFDictionary
-              )
-        else { throw FaceRecognitionError.imageUnavailable }
 
-        let embeddings = try await FaceRecognitionService.shared.recognize(image: uprightImage)
-        try Task.checkCancellation()
-
+        var embeddingIndexByFace: [Int: Int] = [:]
         var usedEmbeddingIndices = Set<Int>()
-        var records: [(id: String, vector: [Double], metadata: [String: String])] = []
-        for (faceIndex, personID) in confirmedFaces {
-            guard let displayName = nameByID[personID],
-                  result.faces.indices.contains(faceIndex)
-            else { continue }
-            let storedFace = result.faces[faceIndex]
-
+        for (faceIndex, face) in result.faces.enumerated() {
             let match = embeddings.indices
                 .filter { !usedEmbeddingIndices.contains($0) }
-                .map { ($0, Self.intersectionOverUnion(storedFace.box, embeddings[$0].box)) }
+                .map { ($0, Self.intersectionOverUnion(face.box, embeddings[$0].box)) }
                 .max(by: { $0.1 < $1.1 })
             guard let (embeddingIndex, overlap) = match, overlap >= 0.25 else { continue }
             usedEmbeddingIndices.insert(embeddingIndex)
+            embeddingIndexByFace[faceIndex] = embeddingIndex
+        }
+
+        if indexConfirmedFaces {
+            var records: [(id: String, vector: [Double], metadata: [String: String])] = []
+            for (faceIndex, face) in result.faces.enumerated() {
+                guard let personID = face.personID,
+                      let displayName = nameByID[personID],
+                      let embeddingIndex = embeddingIndexByFace[faceIndex]
+                else { continue }
+                let vector = embeddings[embeddingIndex].vector
+                guard vector.count == 512, vector.allSatisfy(\.isFinite) else {
+                    throw FaceRecognitionError.invalidEmbedding
+                }
+                records.append((
+                    "\(asset.localIdentifier)#\(faceIndex)",
+                    vector,
+                    [
+                        "asset_id": asset.localIdentifier,
+                        "person_id": personID,
+                        "display_name": displayName,
+                        "model_id": FaceRecognitionService.modelIdentifier
+                    ]
+                ))
+            }
+
+            if !records.isEmpty {
+                let existing = try await ChromaService.shared.get(
+                    ids: records.map(\.id),
+                    collectionID: collectionID,
+                    configuration: configuration
+                )
+                let personIDByRecordID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.metadata["person_id"] ?? "") })
+                let validExistingIDs = Set(existing.ids.enumerated().compactMap { index, id -> String? in
+                    guard index < existing.metadatas.count,
+                          existing.metadatas[index]?["model_id"] == FaceRecognitionService.modelIdentifier,
+                          existing.metadatas[index]?["person_id"] == personIDByRecordID[id]
+                    else { return nil }
+                    return id
+                })
+                let missingRecords = records.filter { !validExistingIDs.contains($0.id) }
+                if !missingRecords.isEmpty {
+                    try await ChromaService.shared.upsert(
+                        ids: missingRecords.map(\.id),
+                        embeddings: missingRecords.map(\.vector),
+                        metadatas: missingRecords.map(\.metadata),
+                        collectionID: collectionID,
+                        configuration: configuration
+                    )
+                }
+            }
+            if hasUnconfirmedFaces { pendingCandidateEmbeddings[asset.localIdentifier] = embeddings }
+        }
+
+        guard findCandidates else { return result }
+        var updatedFaces = result.faces
+        for faceIndex in updatedFaces.indices where updatedFaces[faceIndex].personID == nil {
+            try Task.checkCancellation()
+            guard let embeddingIndex = embeddingIndexByFace[faceIndex] else { continue }
             let vector = embeddings[embeddingIndex].vector
             guard vector.count == 512, vector.allSatisfy(\.isFinite) else {
                 throw FaceRecognitionError.invalidEmbedding
             }
-            records.append((
-                "\(asset.localIdentifier)#\(faceIndex)",
-                vector,
-                [
-                    "asset_id": asset.localIdentifier,
-                    "person_id": personID,
-                    "display_name": displayName,
-                    "model_id": FaceRecognitionService.modelIdentifier
-                ]
-            ))
+            let query = try await ChromaService.shared.query(
+                embedding: vector,
+                results: 5,
+                collectionID: collectionID,
+                configuration: configuration
+            )
+            try Task.checkCancellation()
+            guard let candidate = FaceCandidateRanking.topFive(from: query, people: personRecords).first else {
+                continue
+            }
+            updatedFaces[faceIndex] = DetectedFace(
+                box: updatedFaces[faceIndex].box,
+                personID: nil,
+                candidate: candidate
+            )
         }
 
-        guard !records.isEmpty else { return }
-        let existing = try await ChromaService.shared.get(
-            ids: records.map(\.id),
-            collectionID: collectionID,
-            configuration: configuration
+        return FaceDetectionResult(
+            faceCount: updatedFaces.count,
+            faces: updatedFaces,
+            detectorVersion: result.detectorVersion
         )
-        let validExistingIDs = Set(existing.ids.enumerated().compactMap { index, id -> String? in
-            guard index < existing.metadatas.count,
-                  existing.metadatas[index]?["model_id"] == FaceRecognitionService.modelIdentifier,
-                  existing.metadatas[index]?["person_id"] == records.first(where: { $0.id == id })?.metadata["person_id"]
-            else { return nil }
-            return id
-        })
-        let missingRecords = records.filter { !validExistingIDs.contains($0.id) }
-        guard !missingRecords.isEmpty else { return }
-        try await ChromaService.shared.upsert(
-            ids: missingRecords.map(\.id),
-            embeddings: missingRecords.map(\.vector),
-            metadatas: missingRecords.map(\.metadata),
-            collectionID: collectionID,
-            configuration: configuration
-        )
+    }
+
+    private func collectionID(for configuration: ChromaConfiguration) async throws -> String {
+        if let chromaCollection, chromaCollection.configuration == configuration {
+            return chromaCollection.id
+        }
+        let id = try await ChromaService.shared.createCollectionIfNeeded(configuration: configuration)
+        chromaCollection = (configuration, id)
+        return id
     }
 
     private func people() async -> [Person] {
@@ -722,7 +845,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
             case .cacheUnavailable:
                 AppLocalization.localizedString("人脸检测结果未能写入 SQLite。", comment: "")
             case .modelNotConfigured:
-                AppLocalization.localizedString("检测到已标注人脸，但尚未在设置中选择 GGUF 模型，无法补齐 embedding。", comment: "")
+                AppLocalization.localizedString("尚未在设置中选择 GGUF 人脸模型，无法生成特征或匹配候选人物。", comment: "")
             case .invalidEmbedding:
                 AppLocalization.localizedString("人脸模型返回了无效的 512 维 embedding。", comment: "")
             }
@@ -747,17 +870,20 @@ struct BatchFaceRecognitionView: View {
                     .keyboardShortcut(.cancelAction)
             }
 
-            Text("已有检测结果仍会检查已标注人脸的 Chroma embedding；缺失时使用本地 GGUF 模型生成并保存。未标注人脸只检测方框。")
+            Text("批量流程会为人脸生成特征，并与已标注人物匹配候选；候选仍需人工确认。")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             ProgressView(value: model.progress)
             HStack {
-                Text("进度：\(model.completed) / \(model.assets.count)")
+                Text("阶段进度：\(model.stageProgressCount) / \(model.assets.count)")
                 Spacer()
-                Text("剩余：\(max(model.assets.count - model.completed, 0)) 张")
+                Text("剩余：\(model.stageRemaining) 张")
             }
             .font(.headline)
+            Text(LocalizedStringKey(model.isPreparing ? "建立已标注人物索引" : "匹配未标注人脸"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             if !model.currentName.isEmpty {
                 Text("当前处理：\(model.currentName)")

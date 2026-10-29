@@ -126,6 +126,7 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
     @Published private(set) var revision = 0
     private var photoCountRequestID = 0
     private var isObservingPhotoLibrary = false
+    private var assetSnapshot: (albumID: String, key: String, assets: [LibraryAsset])?
 
     override init() {
         super.init()
@@ -158,10 +159,20 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
         loadAlbums()
     }
 
-    func assets(for album: PhotoAlbum) -> [LibraryAsset] {
+    func assets(for album: PhotoAlbum, cacheKey: String = "") -> [LibraryAsset] {
+        let snapshotKey = "\(revision):\(cacheKey)"
+        if let snapshot = assetSnapshot, snapshot.albumID == album.id, snapshot.key == snapshotKey {
+            return snapshot.assets
+        }
+
+        let databaseURL = PhotoMetadataCache.shared.databaseURL
+        let loadedAssets: [LibraryAsset]
         if album.isFaceAlbum {
             let assetIDs = PhotoMetadataCache.shared.faceAssetIDs()
-            guard !assetIDs.isEmpty else { return [] }
+            guard !assetIDs.isEmpty else {
+                assetSnapshot = (album.id, snapshotKey, [])
+                return []
+            }
 
             let photoIDs = assetIDs.filter { !$0.hasPrefix("disk:") }
             let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: photoIDs, options: nil)
@@ -170,26 +181,30 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
                     .filter { $0.mediaType == .image }
                     .map { ($0.localIdentifier, $0) }
             )
-            let diskAssets = PhotoMetadataCache.shared.faceDiskAssets()
-            return assetIDs.compactMap { id in
-                if let photo = assetsByID[id] { return LibraryAsset(photo) }
+                    let diskAssets = PhotoMetadataCache.shared.faceDiskAssets(databaseURL: databaseURL)
+                    loadedAssets = assetIDs.compactMap { id in
+                        if let photo = assetsByID[id] { return LibraryAsset(photo, databaseURL: databaseURL) }
                 return diskAssets[id]
             }
+                } else {
+                    guard let collection = PHAssetCollection.fetchAssetCollections(
+                        withLocalIdentifiers: [album.id],
+                        options: nil
+                    ).firstObject else {
+                                assetSnapshot = (album.id, snapshotKey, [])
+                        return []
+                    }
+
+                    let options = PHFetchOptions()
+                    options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+                    let result = PHAsset.fetchAssets(in: collection, options: options)
+                    loadedAssets = result.objects(at: IndexSet(integersIn: 0..<result.count))
+                        .filter { $0.mediaType == .image }
+                        .map { LibraryAsset($0, databaseURL: databaseURL) }
         }
 
-        guard let collection = PHAssetCollection.fetchAssetCollections(
-            withLocalIdentifiers: [album.id],
-            options: nil
-        ).firstObject else {
-            return []
-        }
-
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let result = PHAsset.fetchAssets(in: collection, options: options)
-        return result.objects(at: IndexSet(integersIn: 0..<result.count))
-            .filter { $0.mediaType == .image }
-            .map(LibraryAsset.init)
+                        assetSnapshot = (album.id, snapshotKey, loadedAssets)
+                return loadedAssets
     }
 
     private func loadAlbums() {
@@ -223,6 +238,7 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
                 return left.title.localizedStandardCompare(right.title) == .orderedAscending
             }
         albums = [PhotoAlbum.faceAlbum] + systemAlbums
+        assetSnapshot = nil
         revision += 1
         loadPhotoCounts(for: systemAlbums)
 
@@ -685,7 +701,7 @@ final class PhotoMetadataCache {
         return sqlite3_step(statement) == SQLITE_ROW
     }
 
-    func faceDiskAssets() -> [String: LibraryAsset] {
+    func faceDiskAssets(databaseURL: URL?) -> [String: LibraryAsset] {
         let records: [(DiskDirectory, DiskImage)] = queue.sync {
             guard let database else { return [] }
             let index = DiskLibraryDatabase(database: database)
@@ -696,7 +712,9 @@ final class PhotoMetadataCache {
                     .map { (directory, $0) }
             }
         }
-        return Dictionary(uniqueKeysWithValues: records.map { ($0.1.id, LibraryAsset(directory: $0.0, image: $0.1)) })
+        return Dictionary(uniqueKeysWithValues: records.map {
+            ($0.1.id, LibraryAsset(directory: $0.0, image: $0.1, databaseURL: databaseURL))
+        })
     }
 
     private var databaseURLValue: URL?

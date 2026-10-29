@@ -14,6 +14,7 @@ import Vision
 struct PhotoLibraryView: View {
     let album: PhotoAlbum
     let assets: [LibraryAsset]
+    let assetsRevision: String
     @State private var selectedIndex: Int?
     @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
@@ -21,9 +22,10 @@ struct PhotoLibraryView: View {
     @State private var personSummaries: [PersonAlbumSummary] = []
     @State private var selectedPersonID: String?
 
-    init(album: PhotoAlbum, assets: [LibraryAsset]) {
+    init(album: PhotoAlbum, assets: [LibraryAsset], assetsRevision: String) {
         self.album = album
         self.assets = assets
+        self.assetsRevision = assetsRevision
     }
 
     private let columns = [
@@ -38,23 +40,25 @@ struct PhotoLibraryView: View {
     }
 
     private var displayedAssets: [LibraryAsset] {
+        let keywords = searchKeywords
+        guard selectedPersonID != nil || !keywords.isEmpty else { return assets }
+
         let personAssetIDs: Set<String>? = selectedPersonID.map { id in
             personSummaries.first(where: { $0.person.id == id })?.assetIDs ?? []
         }
         return assets.filter { asset in
-            (personAssetIDs.map { $0.contains(asset.localIdentifier) } ?? true)
-                && (searchKeywords.isEmpty || searchResultIDs.map { $0.contains(asset.localIdentifier) } ?? true)
+            (personAssetIDs?.contains(asset.localIdentifier) ?? true)
+                && (keywords.isEmpty || (searchResultIDs?.contains(asset.localIdentifier) ?? true))
         }
     }
 
     private var searchTaskID: String {
         let keywords = searchKeywords.joined(separator: "\u{1F}" )
-        let assetIDs = assets.map(\.revisionID).joined(separator: "\u{1F}")
-        return "\(keywords)|\(assetIDs)"
+        return "\(assetsRevision)|\(keywords)"
     }
 
     private var personSummaryTaskID: String {
-        "\(album.id):\(assets.map(\.revisionID).joined(separator: "\u{1F}"))"
+        "\(album.id):\(assetsRevision)"
     }
 
     var body: some View {
@@ -122,6 +126,7 @@ struct PhotoLibraryView: View {
                     PhotoViewerView(
                         assets: viewerAssets,
                         initialIndex: selectedIndex,
+                        albumTitle: album.title,
                         onBack: { assetID in
                             self.selectedIndex = nil
                             // 关闭覆盖层后再滚动；列表可能已因搜索或刷新移除这张照片。
@@ -146,10 +151,10 @@ struct PhotoLibraryView: View {
             // 搜索条件改变时关闭查看器，不再显示旧结果中的照片。
             selectedIndex = nil
         }
-        .onChange(of: assets.map(\.revisionID)) { _, revisions in
+        .onChange(of: assetsRevision) { _, _ in
             // Recognition may reorder the people collection without changing any image.
-            let available = Set(revisions)
-            if !viewerAssets.allSatisfy({ available.contains($0.revisionID) }) { selectedIndex = nil }
+            let available = Set(assets.map(\.localIdentifier))
+            if !viewerAssets.allSatisfy({ available.contains($0.localIdentifier) }) { selectedIndex = nil }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
             if album.isFaceAlbum { loadPersonSummaries() }
@@ -447,20 +452,27 @@ private struct PhotoThumbnailView: View {
     @State private var ollamaFailureCount = 0
 
     var body: some View {
-        Group {
-            if let image {
-                image
-                    .resizable()
-                    .scaledToFill()
-            } else if let loadError {
-                Image(systemName: "photo.badge.exclamationmark").help(loadError)
-            } else {
-                ProgressView()
+        GeometryReader { geometry in
+            ZStack {
+                if let image {
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                } else if let loadError {
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .help(loadError)
+                } else {
+                    ProgressView()
+                }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background(.quaternary)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .frame(minWidth: 140, maxWidth: .infinity, minHeight: 140, maxHeight: 220)
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity)
+        .frame(height: 180)
         .task(id: asset.revisionID) {
             image = nil
             loadError = nil
@@ -573,6 +585,7 @@ private struct PhotoViewerView: View {
 
     let assets: [LibraryAsset]
     let initialIndex: Int
+    let albumTitle: String
     let onBack: (String) -> Void
 
     @State private var currentIndex: Int
@@ -621,11 +634,13 @@ private struct PhotoViewerView: View {
     init(
         assets: [LibraryAsset],
         initialIndex: Int,
+        albumTitle: String,
         onBack: @escaping (String) -> Void
     ) {
         self.assets = assets
         let boundedIndex = assets.isEmpty ? 0 : min(max(initialIndex, 0), assets.count - 1)
         self.initialIndex = boundedIndex
+        self.albumTitle = albumTitle
         self.onBack = onBack
         _currentIndex = State(initialValue: boundedIndex)
     }
@@ -640,10 +655,12 @@ private struct PhotoViewerView: View {
                 Button {
                     exitViewer()
                 } label: {
-                    Label("返回相册", systemImage: "chevron.left")
+                    Label("返回相册：\(albumTitle)", systemImage: "chevron.left")
+                        .lineLimit(1)
                 }
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("backToPhotoLibrary")
+                .help("返回相册：\(albumTitle)")
 
                 Text("照片 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)

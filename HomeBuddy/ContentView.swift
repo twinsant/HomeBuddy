@@ -53,17 +53,10 @@ struct ContentView: View {
             }
         }
         .toolbar {
-            ToolbarItem {
-                if let title = selectedDirectory?.title ?? selectedAlbum?.title {
-                    Text(title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .help(title)
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
+            ToolbarItemGroup(placement: .primaryAction) {
+                Text("HomeBuddy")
+                    .font(.headline)
 
-            ToolbarItem {
                 Button {
                     if let selectedDirectory {
                         Task { await diskLibrary.scan(selectedDirectory) }
@@ -76,10 +69,7 @@ struct ContentView: View {
                 }
                 .disabled(selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } ?? false)
                 .help(selectedDirectory == nil ? "重新读取系统照片图库" : "递归重新扫描当前目录")
-            }
-            .sharedBackgroundVisibility(.hidden)
 
-            ToolbarItem {
                 Button {
                     Task { await showBatchRecognition() }
                 } label: {
@@ -93,10 +83,7 @@ struct ContentView: View {
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
                 .accessibilityIdentifier("batchOllamaRecognition")
                 .help("打开 Ollama 批量识图任务")
-            }
-            .sharedBackgroundVisibility(.hidden)
 
-            ToolbarItem {
                 Button {
                     Task { await showBatchFaceRecognition() }
                 } label: {
@@ -115,26 +102,32 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
         }
         .popover(isPresented: $isShowingBatchRecognition) {
-            if let batchRecognitionModel {
-                BatchRecognitionView(
-                    model: batchRecognitionModel,
-                    isPresented: $isShowingBatchRecognition
-                )
-            } else {
-                Text("没有可用的批量识图任务")
-                    .padding()
+            Group {
+                if let batchRecognitionModel {
+                    BatchRecognitionView(
+                        model: batchRecognitionModel,
+                        isPresented: $isShowingBatchRecognition
+                    )
+                } else {
+                    Text("没有可用的批量识图任务")
+                        .padding()
+                }
             }
+            .environment(\.locale, AppLocalization.locale)
         }
         .popover(isPresented: $isShowingBatchFaceRecognition) {
-            if let batchFaceRecognitionModel {
-                BatchFaceRecognitionView(
-                    model: batchFaceRecognitionModel,
-                    isPresented: $isShowingBatchFaceRecognition
-                )
-            } else {
-                Text("没有可用的批量人脸识别任务")
-                    .padding()
+            Group {
+                if let batchFaceRecognitionModel {
+                    BatchFaceRecognitionView(
+                        model: batchFaceRecognitionModel,
+                        isPresented: $isShowingBatchFaceRecognition
+                    )
+                } else {
+                    Text("没有可用的批量人脸识别任务")
+                        .padding()
+                }
             }
+            .environment(\.locale, AppLocalization.locale)
         }
         .task {
             await diskLibrary.reload()
@@ -191,7 +184,8 @@ struct ContentView: View {
         } else if let selectedAlbum {
             PhotoLibraryView(
                 album: selectedAlbum,
-                assets: libraryAssets(for: selectedAlbum, revision: recognitionRevision)
+                assets: libraryAssets(for: selectedAlbum, revision: recognitionRevision),
+                assetsRevision: libraryAssetCacheKey(revision: recognitionRevision)
             )
                 .id("\(selectedAlbum.id):\(databaseRevision)")
         } else if !hasPhotoAccess && diskLibrary.directories.isEmpty {
@@ -267,7 +261,11 @@ struct ContentView: View {
     }
 
     private func libraryAssets(for album: PhotoAlbum, revision: Int) -> [LibraryAsset] {
-        photoLibrary.assets(for: album)
+        photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: revision))
+    }
+
+    private func libraryAssetCacheKey(revision: Int) -> String {
+        "\(photoLibrary.revision):\(revision):\(databaseRevision)"
     }
 
     private func selectedAssets() async throws -> (id: String, assets: [LibraryAsset])? {
@@ -275,7 +273,9 @@ struct ContentView: View {
             let images = try await PhotoMetadataCache.shared.diskLibraryOperation { try $0.images(directoryID: directory.id) }
             return (directory.id, images.map { LibraryAsset(directory: directory, image: $0) })
         }
-        if let album = selectedAlbum { return (album.id, photoLibrary.assets(for: album)) }
+        if let album = selectedAlbum {
+            return (album.id, photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: recognitionRevision)))
+        }
         return nil
     }
 

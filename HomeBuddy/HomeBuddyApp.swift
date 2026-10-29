@@ -88,6 +88,7 @@ struct HomeBuddyApp: App {
             ContentView()
                 .environment(\.locale, selectedLocale)
         }
+        .windowToolbarStyle(.unified(showsTitle: false))
         .modelContainer(sharedModelContainer)
 
         Settings {

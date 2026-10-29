@@ -25,7 +25,8 @@ struct DiskPhotoLibraryView: View {
             } else {
                 PhotoLibraryView(
                     album: PhotoAlbum(id: directory.id, title: directory.title, isAllPhotos: false, isFaceAlbum: false, isRecents: false),
-                    assets: images.map { LibraryAsset(directory: directory, image: $0) }
+                    assets: images.map { LibraryAsset(directory: directory, image: $0) },
+                    assetsRevision: "\(directory.id):\(revision)"
                 )
             }
         }

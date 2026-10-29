@@ -16,13 +16,21 @@ nonisolated struct LibraryAsset: @unchecked Sendable {
     let databaseURL: URL?
 
     @MainActor init(_ asset: PHAsset) {
+        self.init(asset, databaseURL: PhotoMetadataCache.shared.databaseURL)
+    }
+
+    @MainActor init(_ asset: PHAsset, databaseURL: URL?) {
         source = .photos(asset)
-        databaseURL = PhotoMetadataCache.shared.databaseURL
+        self.databaseURL = databaseURL
     }
 
     @MainActor init(directory: DiskDirectory, image: DiskImage) {
+        self.init(directory: directory, image: image, databaseURL: PhotoMetadataCache.shared.databaseURL)
+    }
+
+    @MainActor init(directory: DiskDirectory, image: DiskImage, databaseURL: URL?) {
         source = .disk(directory, image)
-        databaseURL = PhotoMetadataCache.shared.databaseURL
+        self.databaseURL = databaseURL
     }
 
     var localIdentifier: String {
