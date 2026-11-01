@@ -15,6 +15,7 @@ struct ContentView: View {
     @StateObject private var batchRecognitionModels = BatchRecognitionModelStore()
     @StateObject private var batchFaceRecognitionModels = BatchFaceRecognitionModelStore()
     @State private var selectedAlbumID: String?
+    @State private var minimumDiskImageLongEdge = 0
     @State private var isShowingBatchRecognition = false
     @State private var batchRecognitionModel: BatchRecognitionModel?
     @State private var isShowingBatchFaceRecognition = false
@@ -69,6 +70,18 @@ struct ContentView: View {
                 }
                 .disabled(selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } ?? false)
                 .help(selectedDirectory == nil ? "重新读取系统照片图库" : "递归重新扫描当前目录")
+
+                if selectedDirectory != nil {
+                    Picker("最小边长", selection: $minimumDiskImageLongEdge) {
+                        Text("不筛选").tag(0)
+                        Text("800 像素").tag(800)
+                        Text("640 像素").tag(640)
+                        Text("480 像素").tag(480)
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("minimumDiskImageLongEdge")
+                    .help("隐藏最长边短于所选像素的本地图片")
+                }
 
                 Button {
                     Task { await showBatchRecognition() }
@@ -179,7 +192,8 @@ struct ContentView: View {
     private var detailContent: some View {
         if let selectedDirectory {
             DiskPhotoLibraryView(directory: selectedDirectory, revision: diskLibrary.revision,
-                                 isScanning: diskLibrary.scanningIDs.contains(selectedDirectory.id))
+                                 isScanning: diskLibrary.scanningIDs.contains(selectedDirectory.id),
+                                 minimumImageLongEdge: minimumDiskImageLongEdge)
                 .id("\(selectedDirectory.id):\(databaseRevision)")
         } else if let selectedAlbum {
             PhotoLibraryView(

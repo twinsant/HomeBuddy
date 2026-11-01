@@ -15,6 +15,7 @@ struct PhotoLibraryView: View {
     let album: PhotoAlbum
     let assets: [LibraryAsset]
     let assetsRevision: String
+    let minimumImageLongEdge: Int
     @State private var selectedIndex: Int?
     @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
@@ -22,10 +23,11 @@ struct PhotoLibraryView: View {
     @State private var personSummaries: [PersonAlbumSummary] = []
     @State private var selectedPersonID: String?
 
-    init(album: PhotoAlbum, assets: [LibraryAsset], assetsRevision: String) {
+    init(album: PhotoAlbum, assets: [LibraryAsset], assetsRevision: String, minimumImageLongEdge: Int = 0) {
         self.album = album
         self.assets = assets
         self.assetsRevision = assetsRevision
+        self.minimumImageLongEdge = minimumImageLongEdge
     }
 
     private let columns = [
@@ -41,13 +43,14 @@ struct PhotoLibraryView: View {
 
     private var displayedAssets: [LibraryAsset] {
         let keywords = searchKeywords
-        guard selectedPersonID != nil || !keywords.isEmpty else { return assets }
+        guard minimumImageLongEdge > 0 || selectedPersonID != nil || !keywords.isEmpty else { return assets }
 
         let personAssetIDs: Set<String>? = selectedPersonID.map { id in
             personSummaries.first(where: { $0.person.id == id })?.assetIDs ?? []
         }
         return assets.filter { asset in
-            (personAssetIDs?.contains(asset.localIdentifier) ?? true)
+            (minimumImageLongEdge == 0 || max(asset.pixelWidth, asset.pixelHeight) >= minimumImageLongEdge)
+                && (personAssetIDs?.contains(asset.localIdentifier) ?? true)
                 && (keywords.isEmpty || (searchResultIDs?.contains(asset.localIdentifier) ?? true))
         }
     }
@@ -76,20 +79,24 @@ struct PhotoLibraryView: View {
 
                         if displayedAssets.isEmpty {
                             ContentUnavailableView(
-                                searchKeywords.isEmpty
-                                    ? (selectedPersonID == nil ? "“\(album.title)”中还没有照片" : "这个人物暂无匹配照片")
-                                    : "没有匹配的照片",
+                                minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
+                                    ? "没有匹配的照片"
+                                    : "“\(album.title)”中还没有照片",
                                 systemImage: "photo.on.rectangle.angled",
                                 description: Text(
-                                    searchKeywords.isEmpty
-                                        ? "这个相册或人物暂时没有可显示的图片。"
-                                        : "没有找到同时符合人物筛选并包含全部关键词的照片。"
+                                    minimumImageLongEdge > 0 && selectedPersonID == nil && searchKeywords.isEmpty
+                                        ? "没有符合最小尺寸的图片（最长边需达到 \(minimumImageLongEdge) 像素）。"
+                                        : (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
+                                            ? "尝试调整搜索关键词或关闭筛选条件。"
+                                            : "这个相册暂时没有可显示的图片。")
                                 )
                             )
                             .frame(maxWidth: .infinity, minHeight: 220)
                         } else {
-                            if !searchKeywords.isEmpty {
-                                Text("找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
+                            if !searchKeywords.isEmpty || minimumImageLongEdge > 0 {
+                                Text(searchKeywords.isEmpty
+                                    ? "筛选后显示 \(displayedAssets.count) 张图片"
+                                    : "找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -2050,6 +2057,20 @@ private struct PersonAssignmentSheet: View {
     }
 }
 
+private struct MarkdownTextView: View {
+    let markdown: String
+
+    private var attributedText: AttributedString {
+        (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
+    }
+
+    var body: some View {
+        Text(attributedText)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct VisionAnalysisResultView: View {
     let result: VisionAnalysisResult
     @Environment(\.dismiss) private var dismiss
@@ -2069,9 +2090,8 @@ private struct VisionAnalysisResultView: View {
             }
 
             ScrollView {
-                Text(result.message)
+                MarkdownTextView(markdown: result.message)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
                     .padding(12)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             }
@@ -2228,9 +2248,7 @@ private struct PhotoInfoSidebar: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Ollama 识别文字")
                                 .font(.headline)
-                            Text(ollamaText)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            MarkdownTextView(markdown: ollamaText)
                                 .padding(10)
                                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                         }

@@ -5,6 +5,7 @@ struct DiskPhotoLibraryView: View {
     let directory: DiskDirectory
     let revision: Int
     let isScanning: Bool
+    let minimumImageLongEdge: Int
     @State private var images: [DiskImage] = []
     @State private var errorMessage: String?
     @State private var isLoading = true
@@ -26,7 +27,8 @@ struct DiskPhotoLibraryView: View {
                 PhotoLibraryView(
                     album: PhotoAlbum(id: directory.id, title: directory.title, isAllPhotos: false, isFaceAlbum: false, isRecents: false),
                     assets: images.map { LibraryAsset(directory: directory, image: $0) },
-                    assetsRevision: "\(directory.id):\(revision)"
+                    assetsRevision: "\(directory.id):\(revision)",
+                    minimumImageLongEdge: minimumImageLongEdge
                 )
             }
         }

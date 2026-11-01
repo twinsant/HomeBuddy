@@ -5,6 +5,13 @@ import Photos
 import SwiftUI
 import Vision
 
+struct BatchRecognitionFailure: Identifiable {
+    let asset: LibraryAsset
+    let message: String
+
+    var id: String { asset.localIdentifier }
+}
+
 @MainActor
 final class BatchRecognitionModelStore: ObservableObject {
     private var models: [String: BatchRecognitionModel] = [:]
@@ -44,7 +51,7 @@ final class BatchRecognitionModel: ObservableObject {
     @Published private(set) var completed = 0
     @Published private(set) var currentName = ""
     @Published private(set) var phase: Phase = .ready
-    @Published private(set) var failures: [String] = []
+    @Published private(set) var failures: [BatchRecognitionFailure] = []
     @Published private(set) var startedAt: Date?
     @Published private(set) var averageProcessingTime: TimeInterval?
 
@@ -158,9 +165,7 @@ final class BatchRecognitionModel: ObservableObject {
                     recordProcessingTime(since: processingStartedAt)
                 }
                 PhotoMetadataCache.shared.recordOllamaFailure(for: asset)
-                failures.append(String.localizedStringWithFormat(
-                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
-                ))
+                failures.append(BatchRecognitionFailure(asset: asset, message: error.localizedDescription))
             }
         }
 
@@ -334,8 +339,14 @@ struct BatchRecognitionView: View {
                     }
 
                     if !model.failures.isEmpty {
-                        Text("失败 \(model.failures.count) 张（恢复时会重试）")
-                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("识图失败的照片（恢复时会重试）：\(model.failures.count) 张")
+                                .foregroundStyle(.orange)
+                                .font(.headline)
+                            ForEach(model.failures) { failure in
+                                BatchRecognitionFailureRow(failure: failure)
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -400,6 +411,56 @@ struct BatchRecognitionView: View {
     }
 }
 
+private struct BatchRecognitionFailureRow: View {
+    let failure: BatchRecognitionFailure
+    @State private var thumbnail: Image?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Group {
+                if let thumbnail {
+                    thumbnail.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 56, height: 56)
+            .background(.quaternary)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(failure.asset.relativePath ?? failure.asset.localIdentifier)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Text(failure.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 9))
+        .task(id: failure.asset.revisionID) {
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .fastFormat
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = true
+            LibraryImageManager.shared.requestImage(
+                for: failure.asset,
+                targetSize: CGSize(width: 112, height: 112),
+                contentMode: .aspectFill,
+                options: options
+            ) { image, _ in
+                if let image { thumbnail = Image(nsImage: image) }
+            }
+        }
+    }
+}
+
 private extension TimeInterval {
     var formattedDuration: String {
         let formatter = DateComponentsFormatter()
@@ -453,7 +514,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
     @Published private(set) var currentName = ""
     @Published private(set) var isPreparing = true
     @Published private(set) var phase: Phase = .ready
-    @Published private(set) var failures: [String] = []
+    @Published private(set) var failures: [BatchRecognitionFailure] = []
 
     private var task: Task<Void, Never>?
     private var countedAssetIDs = Set<String>()
@@ -550,9 +611,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
             } catch {
                 guard runGeneration == generation else { return }
                 preparationFailed = true
-                failures.append(String.localizedStringWithFormat(
-                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
-                ))
+                failures.append(BatchRecognitionFailure(asset: asset, message: error.localizedDescription))
             }
         }
 
@@ -588,9 +647,7 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 break
             } catch {
                 guard runGeneration == generation else { return }
-                failures.append(String.localizedStringWithFormat(
-                    AppLocalization.localizedString("%@：%@", comment: ""), asset.localIdentifier, error.localizedDescription
-                ))
+                failures.append(BatchRecognitionFailure(asset: asset, message: error.localizedDescription))
             }
         }
 
@@ -895,8 +952,18 @@ struct BatchFaceRecognitionView: View {
             }
 
             if !model.failures.isEmpty {
-                Text("失败 \(model.failures.count) 张（恢复时会重试）")
-                    .foregroundStyle(.orange)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("识别失败的照片（恢复时会重试）：\(model.failures.count) 张")
+                            .foregroundStyle(.orange)
+                            .font(.headline)
+                        ForEach(model.failures) { failure in
+                            BatchRecognitionFailureRow(failure: failure)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 180)
             }
 
             HStack {

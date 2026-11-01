@@ -214,6 +214,15 @@
         }
       }
     },
+    "480 像素" : {
+
+    },
+    "640 像素" : {
+
+    },
+    "800 像素" : {
+
+    },
     "Chroma v2 连接成功。" : {
       "comment" : "Connected to Chroma v2.",
       "extractionState" : "stale",
@@ -782,6 +791,9 @@
         }
       }
     },
+    "不筛选" : {
+
+    },
     "中断" : {
       "localizations" : {
         "en" : {
@@ -1177,6 +1189,9 @@
           }
         }
       }
+    },
+    "最小边长" : {
+
     },
     "准备识别人脸…" : {
       "extractionState" : "stale",
@@ -1594,6 +1609,7 @@
       }
     },
     "失败 %lld 张（恢复时会重试）" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1790,6 +1806,9 @@
           }
         }
       }
+    },
+    "尝试调整搜索关键词或关闭筛选条件。" : {
+
     },
     "已保存的照片会自动跳过。中断后重新打开此窗口即可从上次进度继续。" : {
       "localizations" : {
@@ -3341,6 +3360,7 @@
       }
     },
     "没有找到同时符合人物筛选并包含全部关键词的照片。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3372,6 +3392,9 @@
           }
         }
       }
+    },
+    "没有符合最小尺寸的图片（最长边需达到 %lld 像素）。" : {
+
     },
     "没有识别到二维码或条码。" : {
       "extractionState" : "stale",
@@ -3816,6 +3839,9 @@
         }
       }
     },
+    "筛选后显示 %lld 张图片" : {
+
+    },
     "简体中文" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3963,6 +3989,9 @@
         }
       }
     },
+    "识别失败的照片（恢复时会重试）：%lld 张" : {
+
+    },
     "识别完成，但 Chroma 没有阈值内候选。已标注照片需先运行“识别人脸并匹配”，将人脸向量写入索引。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4027,6 +4056,9 @@
           }
         }
       }
+    },
+    "识图失败的照片（恢复时会重试）：%lld 张" : {
+
     },
     "语言" : {
       "localizations" : {
@@ -4183,6 +4215,7 @@
       }
     },
     "这个人物暂无匹配照片" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4199,6 +4232,7 @@
       }
     },
     "这个相册或人物暂时没有可显示的图片。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4213,6 +4247,9 @@
           }
         }
       }
+    },
+    "这个相册暂时没有可显示的图片。" : {
+
     },
     "进度：%lld / %lld" : {
       "localizations" : {
@@ -4559,6 +4596,9 @@
           }
         }
       }
+    },
+    "隐藏最长边短于所选像素的本地图片" : {
+
     },
     "预计剩余时间：%@" : {
       "localizations" : {
