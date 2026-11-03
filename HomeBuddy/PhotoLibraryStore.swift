@@ -12,11 +12,17 @@ import SQLite3
 private func fetchPhotoCounts(for albumIDs: [String]) -> [String: Int] {
     guard !albumIDs.isEmpty else { return [:] }
 
+    var counts: [String: Int] = [:]
+    if albumIDs.contains(PhotoAlbum.videoAlbum.id) {
+        counts[PhotoAlbum.videoAlbum.id] = PHAsset.fetchAssets(with: .video, options: nil).count
+    }
+
+    let collectionIDs = albumIDs.filter { $0 != PhotoAlbum.videoAlbum.id }
+    guard !collectionIDs.isEmpty else { return counts }
     let collections = PHAssetCollection.fetchAssetCollections(
-        withLocalIdentifiers: albumIDs,
+        withLocalIdentifiers: collectionIDs,
         options: nil
     )
-    var counts: [String: Int] = [:]
     collections.enumerateObjects { collection, _, _ in
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
@@ -30,10 +36,12 @@ struct PhotoAlbum: Identifiable, Hashable {
     let title: String
     let isAllPhotos: Bool
     let isFaceAlbum: Bool
+    let isVideoAlbum: Bool
     let isRecents: Bool
 
     var icon: String {
         if isFaceAlbum { return "person.2.crop.square.stack" }
+        if isVideoAlbum { return "video" }
         return isAllPhotos ? "photo.on.rectangle.angled" : "rectangle.stack"
     }
 
@@ -42,6 +50,7 @@ struct PhotoAlbum: Identifiable, Hashable {
         title = collection.localizedTitle ?? NSLocalizedString("未命名相册", comment: "")
         isAllPhotos = collection.assetCollectionSubtype == .smartAlbumUserLibrary
         isFaceAlbum = false
+        isVideoAlbum = false
         isRecents = collection.assetCollectionSubtype == .smartAlbumRecentlyAdded
     }
 
@@ -55,11 +64,23 @@ struct PhotoAlbum: Identifiable, Hashable {
         )
     }
 
-    init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool, isRecents: Bool) {
+    static var videoAlbum: PhotoAlbum {
+        PhotoAlbum(
+            id: "virtual:videos",
+            title: NSLocalizedString("视频", comment: ""),
+            isAllPhotos: false,
+            isFaceAlbum: false,
+            isVideoAlbum: true,
+            isRecents: false
+        )
+    }
+
+    init(id: String, title: String, isAllPhotos: Bool, isFaceAlbum: Bool, isVideoAlbum: Bool = false, isRecents: Bool) {
         self.id = id
         self.title = title
         self.isAllPhotos = isAllPhotos
         self.isFaceAlbum = isFaceAlbum
+        self.isVideoAlbum = isVideoAlbum
         self.isRecents = isRecents
     }
 }
@@ -167,7 +188,13 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
 
         let databaseURL = PhotoMetadataCache.shared.databaseURL
         let loadedAssets: [LibraryAsset]
-        if album.isFaceAlbum {
+        if album.isVideoAlbum {
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            let result = PHAsset.fetchAssets(with: .video, options: options)
+            loadedAssets = result.objects(at: IndexSet(integersIn: 0..<result.count))
+                .map { LibraryAsset($0, databaseURL: databaseURL) }
+        } else if album.isFaceAlbum {
             let assetIDs = PhotoMetadataCache.shared.faceAssetIDs()
             guard !assetIDs.isEmpty else {
                 assetSnapshot = (album.id, snapshotKey, [])
@@ -229,6 +256,7 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
 
         var seen = Set<String>()
         let systemAlbums = collections
+            .filter { $0.assetCollectionSubtype != .smartAlbumVideos }
             .map(PhotoAlbum.init)
             .filter { seen.insert($0.id).inserted }
             .sorted { left, right in
@@ -237,10 +265,10 @@ final class PhotoLibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeO
                 }
                 return left.title.localizedStandardCompare(right.title) == .orderedAscending
             }
-        albums = [PhotoAlbum.faceAlbum] + systemAlbums
+        albums = [PhotoAlbum.faceAlbum, .videoAlbum] + systemAlbums
         assetSnapshot = nil
         revision += 1
-        loadPhotoCounts(for: systemAlbums)
+        loadPhotoCounts(for: [PhotoAlbum.videoAlbum] + systemAlbums)
 
         if !isObservingPhotoLibrary {
             PHPhotoLibrary.shared().register(self)

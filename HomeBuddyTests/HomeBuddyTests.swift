@@ -36,6 +36,13 @@ struct HomeBuddyTests {
         #expect(!LibraryAsset(PhotoTypeFixture(type: .video, subtypes: .photoLive)).isLivePhoto)
     }
 
+    @Test func videoAssetsAreIdentifiedAndUseVideoAlbum() {
+        #expect(LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [])).isVideo)
+        #expect(!LibraryAsset(PhotoTypeFixture(type: .image, subtypes: [])).isVideo)
+        #expect(PhotoAlbum.videoAlbum.id == "virtual:videos")
+        #expect(PhotoAlbum.videoAlbum.isVideoAlbum)
+    }
+
     @Test func horizontalSwipeNavigatesOnceWithoutMomentum() {
         var state = PhotoViewerScrollState()
         #expect(state.handle(delta: CGSize(width: 20, height: 1), phase: .began,

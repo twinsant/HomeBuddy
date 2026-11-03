@@ -93,6 +93,7 @@ struct ContentView: View {
                     }
                 }
                 .disabled((selectedDirectory == nil && selectedAlbum == nil && batchRecognitionModels.activeModel == nil)
+                          || selectedAlbum?.isVideoAlbum == true
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
                 .accessibilityIdentifier("batchOllamaRecognition")
                 .help("打开 Ollama 批量识图任务")
@@ -108,6 +109,7 @@ struct ContentView: View {
                 }
                 .disabled(!faceModelReady
                           || (selectedDirectory == nil && selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
+                          || selectedAlbum?.isVideoAlbum == true
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
                 .accessibilityIdentifier("batchFaceRecognition")
                 .help(faceModelReady ? "打开批量人脸识别任务" : "先在设置里选择人脸模型文件")
@@ -288,6 +290,7 @@ struct ContentView: View {
             return (directory.id, images.map { LibraryAsset(directory: directory, image: $0) })
         }
         if let album = selectedAlbum {
+            guard !album.isVideoAlbum else { return nil }
             return (album.id, photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: recognitionRevision)))
         }
         return nil
@@ -518,9 +521,20 @@ private struct PhotoSidebarView: View {
                 }
                 .buttonStyle(.plain)
             }
+            Section("视频") {
+                Button { selectedAlbumID = PhotoAlbum.videoAlbum.id } label: {
+                    PhotoAlbumRow(
+                        album: .videoAlbum,
+                        isSelected: selectedAlbumID == PhotoAlbum.videoAlbum.id,
+                        photoCount: photoCounts[PhotoAlbum.videoAlbum.id]
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasPhotoAccess)
+            }
             Section("系统相册") {
                 if hasPhotoAccess {
-                    ForEach(albums.filter { !$0.isFaceAlbum }) { album in
+                    ForEach(albums.filter { !$0.isFaceAlbum && !$0.isVideoAlbum }) { album in
                         Button { selectedAlbumID = album.id } label: {
                             PhotoAlbumRow(
                                 album: album,

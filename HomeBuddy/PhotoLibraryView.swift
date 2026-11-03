@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import AVKit
 import ImageIO
 import Photos
 import PhotosUI
@@ -17,6 +18,7 @@ struct PhotoLibraryView: View {
     let assetsRevision: String
     let minimumImageLongEdge: Int
     @State private var selectedIndex: Int?
+    @State private var selectedVideoAsset: LibraryAsset?
     @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
@@ -79,16 +81,20 @@ struct PhotoLibraryView: View {
 
                         if displayedAssets.isEmpty {
                             ContentUnavailableView(
-                                minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
-                                    ? "没有匹配的照片"
-                                    : "“\(album.title)”中还没有照片",
-                                systemImage: "photo.on.rectangle.angled",
+                                album.isVideoAlbum
+                                    ? (minimumImageLongEdge > 0 || !searchKeywords.isEmpty ? "没有匹配的视频" : "“\(album.title)”中还没有视频")
+                                    : (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
+                                        ? "没有匹配的照片"
+                                        : "“\(album.title)”中还没有照片"),
+                                systemImage: album.isVideoAlbum ? "video" : "photo.on.rectangle.angled",
                                 description: Text(
-                                    minimumImageLongEdge > 0 && selectedPersonID == nil && searchKeywords.isEmpty
+                                    album.isVideoAlbum
+                                        ? (searchKeywords.isEmpty ? "这个分类暂时没有可显示的视频。" : "尝试调整搜索关键词。")
+                                        : (minimumImageLongEdge > 0 && selectedPersonID == nil && searchKeywords.isEmpty
                                         ? "没有符合最小尺寸的图片（最长边需达到 \(minimumImageLongEdge) 像素）。"
                                         : (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
                                             ? "尝试调整搜索关键词或关闭筛选条件。"
-                                            : "这个相册暂时没有可显示的图片。")
+                                            : "这个相册暂时没有可显示的图片。"))
                                 )
                             )
                             .frame(maxWidth: .infinity, minHeight: 220)
@@ -105,8 +111,12 @@ struct PhotoLibraryView: View {
                                 ForEach(Array(displayedAssets.enumerated()), id: \.element.localIdentifier) { index, asset in
                                     Button {
                                         guard displayedAssets.indices.contains(index) else { return }
-                                        viewerAssets = displayedAssets
-                                        selectedIndex = index
+                                        if asset.isVideo {
+                                            selectedVideoAsset = asset
+                                        } else {
+                                            viewerAssets = displayedAssets
+                                            selectedIndex = index
+                                        }
                                     } label: {
                                         PhotoThumbnailView(asset: asset)
                                             .contentShape(Rectangle())
@@ -114,9 +124,9 @@ struct PhotoLibraryView: View {
                                     .buttonStyle(.plain)
                                     .frame(maxWidth: .infinity)
                                     .contentShape(Rectangle())
-                                    .accessibilityLabel("查看照片")
+                                    .accessibilityLabel(asset.isVideo ? "播放视频" : "查看照片")
                                     .accessibilityIdentifier("photoThumbnail-\(index)")
-                                    .help("点击查看大图")
+                                    .help(asset.isVideo ? "点击播放视频" : "点击查看大图")
                                     .id(asset.localIdentifier)
                                     .modifier(PhotoExportMenu(asset: asset))
                                 }
@@ -126,10 +136,17 @@ struct PhotoLibraryView: View {
                     }
                     .padding()
                 }
-                .allowsHitTesting(selectedIndex == nil)
-                .accessibilityHidden(selectedIndex != nil)
+                .allowsHitTesting(selectedIndex == nil && selectedVideoAsset == nil)
+                .accessibilityHidden(selectedIndex != nil || selectedVideoAsset != nil)
 
-                if let selectedIndex, viewerAssets.indices.contains(selectedIndex) {
+                if let selectedVideoAsset {
+                    PhotoVideoPlayerView(asset: selectedVideoAsset, albumTitle: album.title) {
+                        self.selectedVideoAsset = nil
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .zIndex(1)
+                } else if let selectedIndex, viewerAssets.indices.contains(selectedIndex) {
                     PhotoViewerView(
                         assets: viewerAssets,
                         initialIndex: selectedIndex,
@@ -157,11 +174,15 @@ struct PhotoLibraryView: View {
         .onChange(of: searchText) { _, _ in
             // 搜索条件改变时关闭查看器，不再显示旧结果中的照片。
             selectedIndex = nil
+            selectedVideoAsset = nil
         }
         .onChange(of: assetsRevision) { _, _ in
             // Recognition may reorder the people collection without changing any image.
             let available = Set(assets.map(\.localIdentifier))
             if !viewerAssets.allSatisfy({ available.contains($0.localIdentifier) }) { selectedIndex = nil }
+            if let selectedVideoAsset, !available.contains(selectedVideoAsset.localIdentifier) {
+                self.selectedVideoAsset = nil
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
             if album.isFaceAlbum { loadPersonSummaries() }
@@ -340,11 +361,13 @@ private struct PhotoExportMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                Button("导出照片…", systemImage: "square.and.arrow.up") {
-                    let snapshot = asset
-                    Task { await export(snapshot) }
+                if !asset.isVideo {
+                    Button("导出照片…", systemImage: "square.and.arrow.up") {
+                        let snapshot = asset
+                        Task { await export(snapshot) }
+                    }
+                    .disabled(isExporting)
                 }
-                .disabled(isExporting)
             }
             .overlay(alignment: .bottomTrailing) {
                 if isExporting {
@@ -457,6 +480,8 @@ private struct PhotoThumbnailView: View {
     @State private var image: Image?
     @State private var loadError: String?
     @State private var ollamaFailureCount = 0
+    @State private var imageRequestID: PHImageRequestID?
+    @State private var imageRequestGeneration = UUID()
 
     var body: some View {
         GeometryReader { geometry in
@@ -484,26 +509,29 @@ private struct PhotoThumbnailView: View {
             image = nil
             loadError = nil
             ollamaFailureCount = 0
-            PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
+            if !asset.isVideo {
+                PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
+            }
+            let generation = UUID()
+            imageRequestGeneration = generation
             let options = PHImageRequestOptions()
-            options.deliveryMode = .opportunistic
+            options.deliveryMode = asset.isVideo ? .fastFormat : .opportunistic
             options.resizeMode = .fast
             options.isNetworkAccessAllowed = true
 
             let targetSize = CGSize(width: 500, height: 500)
-            LibraryImageManager.shared.requestImage(
+            imageRequestID = LibraryImageManager.shared.requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
             ) { nsImage, info in
+                guard imageRequestGeneration == generation else { return }
                 guard let nsImage else {
                     loadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "图片无法读取"
                     return
                 }
-                Task { @MainActor in
-                    image = Image(nsImage: nsImage)
-                }
+                image = Image(nsImage: nsImage)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -516,8 +544,97 @@ private struct PhotoThumbnailView: View {
                     .accessibilityLabel("Ollama 识图失败 \(ollamaFailureCount) 次")
             }
         }
+        .overlay {
+            if asset.isVideo {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 42))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.65))
+                    .accessibilityHidden(true)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
+            guard !asset.isVideo else { return }
             PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
+        }
+        .onDisappear {
+            imageRequestGeneration = UUID()
+            if let imageRequestID {
+                PHImageManager.default().cancelImageRequest(imageRequestID)
+                self.imageRequestID = nil
+            }
+        }
+    }
+}
+
+private struct PhotoVideoPlayerView: View {
+    let asset: LibraryAsset
+    let albumTitle: String
+    let onBack: () -> Void
+    @State private var player: AVPlayer?
+    @State private var requestID: PHImageRequestID?
+    @State private var loadError: String?
+    @State private var loadGeneration = UUID()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    Label("返回相册：\(albumTitle)", systemImage: "chevron.left")
+                        .lineLimit(1)
+                }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("backToPhotoLibrary")
+                Spacer()
+                Text("视频")
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+
+            Group {
+                if let player {
+                    VideoPlayer(player: player)
+                        .padding(24)
+                } else if let loadError {
+                    ContentUnavailableView("视频无法播放", systemImage: "video.slash", description: Text(loadError))
+                } else {
+                    ProgressView("正在加载视频…")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black.opacity(0.85))
+        }
+        .frame(minWidth: 700, minHeight: 500)
+        .task(id: asset.revisionID) { loadVideo() }
+        .onDisappear {
+            loadGeneration = UUID()
+            if let requestID { PHImageManager.default().cancelImageRequest(requestID) }
+            player?.pause()
+            player = nil
+        }
+    }
+
+    private func loadVideo() {
+        guard case .photos(let photo) = asset.source else {
+            loadError = "仅支持播放照片图库中的视频。"
+            return
+        }
+        let generation = UUID()
+        loadGeneration = generation
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .automatic
+        options.isNetworkAccessAllowed = true
+        requestID = PHImageManager.default().requestPlayerItem(forVideo: photo, options: options) { item, info in
+            Task { @MainActor in
+                guard loadGeneration == generation else { return }
+                guard let item else {
+                    loadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "无法读取视频资源。"
+                    return
+                }
+                let player = AVPlayer(playerItem: item)
+                self.player = player
+                player.play()
+            }
         }
     }
 }

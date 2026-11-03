@@ -51,6 +51,10 @@ nonisolated struct LibraryAsset: @unchecked Sendable {
     var isFavorite: Bool {
         switch source { case .photos(let asset): return asset.isFavorite; case .disk: return false }
     }
+    var isVideo: Bool {
+        guard case .photos(let asset) = source else { return false }
+        return asset.mediaType == .video
+    }
     var isLivePhoto: Bool {
         guard case .photos(let asset) = source else { return false }
         return asset.mediaType == .image && asset.mediaSubtypes.contains(.photoLive)
@@ -72,11 +76,12 @@ nonisolated struct LibraryAsset: @unchecked Sendable {
 final class LibraryImageManager {
     static let shared = LibraryImageManager()
 
+    @discardableResult
     func requestImage(for asset: LibraryAsset, targetSize: CGSize, contentMode: PHImageContentMode,
-                      options: PHImageRequestOptions, resultHandler: @escaping @MainActor (NSImage?, [AnyHashable: Any]?) -> Void) {
+                      options: PHImageRequestOptions, resultHandler: @escaping @MainActor (NSImage?, [AnyHashable: Any]?) -> Void) -> PHImageRequestID? {
         switch asset.source {
         case .photos(let photo):
-            PHImageManager.default().requestImage(for: photo, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
+            return PHImageManager.default().requestImage(for: photo, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
                 Task { @MainActor in resultHandler(image, info) }
             }
         case .disk(let directory, let image):
@@ -89,6 +94,7 @@ final class LibraryImageManager {
                     resultHandler(NSImage(cgImage: bitmap, size: NSSize(width: bitmap.width, height: bitmap.height)), nil)
                 } catch { resultHandler(nil, [PHImageErrorKey: error]) }
             }
+            return nil
         }
     }
 
