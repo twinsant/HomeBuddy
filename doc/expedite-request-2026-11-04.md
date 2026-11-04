@@ -15,11 +15,27 @@
 
 ---
 
-## 提交路径
+## 提交路径（订正）
 
-App Store Connect → HomeBuddy → App 信息 → **联系我们**（Contact Us）→ App 审核 → **请求加急审核**（Request an Expedited Review）
+**App Store Connect 里没有加急表单。** 版本页面上那个「Waiting for Review」只能看状态，不能提交任何东西；Resolution Center 在苹果主动发消息之前也是只读的。
 
-或用直达表单：https://developer.apple.com/contact/app-store/?topic=expedite
+加急审核在开发者网站上，是独立表单：
+
+```
+https://developer.apple.com/contact/app-store/?topic=expedite
+```
+
+未登录会 302 跳到 Apple ID 登录页（`idmsa.apple.com`），登录后才是表单：选 app + 平台 → 填理由 → 提交。
+
+入口也可以在 App Store Connect 里找：右上角「?」→ Contact Us → App Review。
+
+## 官方口径（2026-11-04 抓的原文）
+
+> App Review works around the clock with the goal of reviewing at least 50% of submissions in less than 24 hours and 90% in less than 48 hours. However, if you're facing extenuating circumstances, such as fixing a critical bug or timing your release to coincide with an event, you can request an expedited review.
+
+> Expedite requests should be reserved for matters of genuine urgency.
+
+也就是说：苹果自己承诺 90% 在 48 小时内出结果。**我们等了 7 天，已经落在他们承诺之外**，这是最有说服力的一条依据，比编一个发布节点强。
 
 ---
 
@@ -69,6 +85,34 @@ Thank you.
 ```
 
 ---
+
+## 版本 C：先问状态，不消耗加急（推荐先发这个）
+
+加急要留给真的紧急。更稳的顺序是先发一封状态咨询，24 到 48 小时没回音再提加急。
+
+App Store Connect → 右上角「?」→ Contact Us → App Review →「Contact App Review for help with a submission」
+
+```
+Subject: HomeBuddy 1.0 (build 2) in Waiting for Review for 7 days
+
+Hello,
+
+HomeBuddy 1.0, build 2, is our first macOS submission. We submitted it on
+27 October 2026 at 18:11 PDT. It has been in Waiting for Review for seven
+days and has never moved to In Review. There is no rejection and no
+message in Resolution Center.
+
+We are not asking to jump the queue. We would like to know whether the
+submission is correctly queued and complete on our side, or whether
+something is holding it back that we can fix. If there is anything
+missing in the review notes or metadata, tell us and we will supply it
+the same day.
+
+App ID: <App ID>
+Submission ID: <Submission ID>
+```
+
+**为什么先发这个**：官方承诺 90% 在 48 小时内出结果，问一句「是不是我们这边缺东西」属于正当咨询，苹果通常会回。加急额度有限，留到真有节点的时候用。
 
 ## 提交后的预期
 
