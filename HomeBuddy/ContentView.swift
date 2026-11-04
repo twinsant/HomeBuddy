@@ -25,6 +25,8 @@ struct ContentView: View {
     @State private var faceModelReady = FaceRecognitionConfiguration.modelURL() != nil
     @State private var pendingOllamaCount: Int?
     @State private var pendingFaceCount: Int?
+    @State private var videoCoverModel: BatchVideoCoverModel?
+    @State private var isShowingVideoCovers = false
 
     var body: some View {
         NavigationSplitView {
@@ -83,17 +85,26 @@ struct ContentView: View {
                     .help("隐藏最长边短于所选像素的本地图片")
                 }
 
+                if selectedAlbum?.isVideoAlbum == true {
+                    Button {
+                        Task { await showVideoCovers() }
+                    } label: {
+                        Label("提取封面", systemImage: "film.stack")
+                    }
+                    .accessibilityIdentifier("batchVideoCovers")
+                    .help("批量提取并保存视频封面")
+                }
+
                 Button {
                     Task { await showBatchRecognition() }
                 } label: {
                     Label {
-                        Text("Ollama 批量识图")
+                        Text(selectedAlbum?.isVideoAlbum == true ? "批量识别封面" : "Ollama 批量识图")
                     } icon: {
                         ollamaToolbarIcon
                     }
                 }
                 .disabled((selectedDirectory == nil && selectedAlbum == nil && batchRecognitionModels.activeModel == nil)
-                          || selectedAlbum?.isVideoAlbum == true
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
                 .accessibilityIdentifier("batchOllamaRecognition")
                 .help("打开 Ollama 批量识图任务")
@@ -102,19 +113,24 @@ struct ContentView: View {
                     Task { await showBatchFaceRecognition() }
                 } label: {
                     Label {
-                        Text("批量人脸识别")
+                        Text(selectedAlbum?.isVideoAlbum == true ? "批量识别封面人脸" : "批量人脸识别")
                     } icon: {
                         faceRecognitionToolbarIcon
                     }
                 }
                 .disabled(!faceModelReady
                           || (selectedDirectory == nil && selectedAlbum == nil && batchFaceRecognitionModels.activeModel == nil)
-                          || selectedAlbum?.isVideoAlbum == true
                           || selectedDirectory.map { diskLibrary.scanningIDs.contains($0.id) } == true)
                 .accessibilityIdentifier("batchFaceRecognition")
                 .help(faceModelReady ? "打开批量人脸识别任务" : "先在设置里选择人脸模型文件")
             }
             .sharedBackgroundVisibility(.hidden)
+        }
+        .popover(isPresented: $isShowingVideoCovers) {
+            if let videoCoverModel {
+                BatchVideoCoverView(model: videoCoverModel)
+                    .environment(\.locale, AppLocalization.locale)
+            }
         }
         .popover(isPresented: $isShowingBatchRecognition) {
             Group {
@@ -165,6 +181,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyDatabaseDidChange"))) { _ in
             batchRecognitionModels.activeModel?.stop()
             batchFaceRecognitionModels.activeModel?.pause()
+            videoCoverModel?.pause()
+            videoCoverModel = nil
+            isShowingVideoCovers = false
             isShowingBatchRecognition = false
             isShowingBatchFaceRecognition = false
             batchRecognitionModel = nil
@@ -290,7 +309,6 @@ struct ContentView: View {
             return (directory.id, images.map { LibraryAsset(directory: directory, image: $0) })
         }
         if let album = selectedAlbum {
-            guard !album.isVideoAlbum else { return nil }
             return (album.id, photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: recognitionRevision)))
         }
         return nil
@@ -322,6 +340,7 @@ struct ContentView: View {
     private func showBatchRecognition() async {
         let model: BatchRecognitionModel?
         if let activeModel = batchRecognitionModels.activeModel,
+           (activeModel.assets.first?.isVideo == true) == (selectedAlbum?.isVideoAlbum == true),
            await PhotoMetadataCache.shared.areCurrent(activeModel.assets) {
             model = activeModel
         } else {
@@ -341,6 +360,7 @@ struct ContentView: View {
     private func showBatchFaceRecognition() async {
         let model: BatchFaceRecognitionModel
         if let active = batchFaceRecognitionModels.activeModel,
+           (active.assets.first?.isVideo == true) == (selectedAlbum?.isVideoAlbum == true),
            await PhotoMetadataCache.shared.areCurrent(active.assets) {
             model = active
         } else {
@@ -353,6 +373,21 @@ struct ContentView: View {
         batchFaceRecognitionModel = model
         model.startOrResume()
         isShowingBatchFaceRecognition = true
+    }
+
+    private func showVideoCovers() async {
+        do {
+            guard let selection = try await selectedAssets(), selectedAlbum?.isVideoAlbum == true else { return }
+            let revisions = selection.assets.map(\.revisionID)
+            if videoCoverModel?.assets.map(\.revisionID) != revisions {
+                videoCoverModel?.pause()
+                videoCoverModel = BatchVideoCoverModel(assets: selection.assets)
+            }
+            videoCoverModel?.start()
+            isShowingVideoCovers = true
+        } catch {
+            diskLibrary.errorMessage = error.localizedDescription
+        }
     }
 
     private func openPhotoSettings() {
@@ -530,6 +565,7 @@ private struct PhotoSidebarView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("videoAlbum")
                 .disabled(!hasPhotoAccess)
             }
             Section("系统相册") {

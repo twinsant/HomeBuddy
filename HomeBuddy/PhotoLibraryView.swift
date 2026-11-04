@@ -18,7 +18,7 @@ struct PhotoLibraryView: View {
     let assetsRevision: String
     let minimumImageLongEdge: Int
     @State private var selectedIndex: Int?
-    @State private var selectedVideoAsset: LibraryAsset?
+    @State private var selectedVideoIndex: Int?
     @State private var viewerAssets: [LibraryAsset] = []
     @State private var searchText = ""
     @State private var searchResultIDs: Set<String>?
@@ -112,7 +112,8 @@ struct PhotoLibraryView: View {
                                     Button {
                                         guard displayedAssets.indices.contains(index) else { return }
                                         if asset.isVideo {
-                                            selectedVideoAsset = asset
+                                            viewerAssets = displayedAssets.filter(\.isVideo)
+                                            selectedVideoIndex = viewerAssets.firstIndex { $0.localIdentifier == asset.localIdentifier }
                                         } else {
                                             viewerAssets = displayedAssets
                                             selectedIndex = index
@@ -136,12 +137,17 @@ struct PhotoLibraryView: View {
                     }
                     .padding()
                 }
-                .allowsHitTesting(selectedIndex == nil && selectedVideoAsset == nil)
-                .accessibilityHidden(selectedIndex != nil || selectedVideoAsset != nil)
+                .allowsHitTesting(selectedIndex == nil && selectedVideoIndex == nil)
+                .accessibilityHidden(selectedIndex != nil || selectedVideoIndex != nil)
 
-                if let selectedVideoAsset {
-                    PhotoVideoPlayerView(asset: selectedVideoAsset, albumTitle: album.title) {
-                        self.selectedVideoAsset = nil
+                if let selectedVideoIndex, viewerAssets.indices.contains(selectedVideoIndex) {
+                    PhotoVideoPlayerView(assets: viewerAssets, initialIndex: selectedVideoIndex, albumTitle: album.title) { assetID in
+                        self.selectedVideoIndex = nil
+                        DispatchQueue.main.async {
+                            guard self.selectedVideoIndex == nil,
+                                  self.displayedAssets.contains(where: { $0.localIdentifier == assetID }) else { return }
+                            withAnimation { scrollProxy.scrollTo(assetID, anchor: .center) }
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(nsColor: .windowBackgroundColor))
@@ -174,14 +180,14 @@ struct PhotoLibraryView: View {
         .onChange(of: searchText) { _, _ in
             // 搜索条件改变时关闭查看器，不再显示旧结果中的照片。
             selectedIndex = nil
-            selectedVideoAsset = nil
+            selectedVideoIndex = nil
         }
         .onChange(of: assetsRevision) { _, _ in
             // Recognition may reorder the people collection without changing any image.
             let available = Set(assets.map(\.localIdentifier))
             if !viewerAssets.allSatisfy({ available.contains($0.localIdentifier) }) { selectedIndex = nil }
-            if let selectedVideoAsset, !available.contains(selectedVideoAsset.localIdentifier) {
-                self.selectedVideoAsset = nil
+            if selectedVideoIndex != nil && !viewerAssets.allSatisfy({ available.contains($0.localIdentifier) }) {
+                selectedVideoIndex = nil
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
@@ -512,27 +518,7 @@ private struct PhotoThumbnailView: View {
             if !asset.isVideo {
                 PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
             }
-            let generation = UUID()
-            imageRequestGeneration = generation
-            let options = PHImageRequestOptions()
-            options.deliveryMode = asset.isVideo ? .fastFormat : .opportunistic
-            options.resizeMode = .fast
-            options.isNetworkAccessAllowed = true
-
-            let targetSize = CGSize(width: 500, height: 500)
-            imageRequestID = LibraryImageManager.shared.requestImage(
-                for: asset,
-                targetSize: targetSize,
-                contentMode: .aspectFill,
-                options: options
-            ) { nsImage, info in
-                guard imageRequestGeneration == generation else { return }
-                guard let nsImage else {
-                    loadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "图片无法读取"
-                    return
-                }
-                image = Image(nsImage: nsImage)
-            }
+            await loadImage()
         }
         .overlay(alignment: .topTrailing) {
             if ollamaFailureCount > 3 {
@@ -557,6 +543,10 @@ private struct PhotoThumbnailView: View {
             guard !asset.isVideo else { return }
             PhotoMetadataCache.shared.ollamaFailureCount(for: asset) { ollamaFailureCount = $0 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyVideoCoverDidChange"))) { notification in
+            guard asset.isVideo, notification.object as? String == asset.revisionID else { return }
+            Task { await loadImage() }
+        }
         .onDisappear {
             imageRequestGeneration = UUID()
             if let imageRequestID {
@@ -565,53 +555,246 @@ private struct PhotoThumbnailView: View {
             }
         }
     }
+
+    private func loadImage() async {
+        let generation = UUID()
+        imageRequestGeneration = generation
+        if let imageRequestID {
+            PHImageManager.default().cancelImageRequest(imageRequestID)
+            self.imageRequestID = nil
+        }
+        if asset.isVideo, let url = try? VideoCoverStore.url(for: asset) {
+            let cover = await Task.detached(priority: .userInitiated) {
+                VideoCoverStore.thumbnail(at: url, maximumSize: 500)
+            }.value
+            guard imageRequestGeneration == generation, !Task.isCancelled else { return }
+            if let cover {
+                image = Image(nsImage: NSImage(cgImage: cover, size: .zero))
+                loadError = nil
+                return
+            }
+        }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = asset.isVideo ? .fastFormat : .opportunistic
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+        imageRequestID = LibraryImageManager.shared.requestImage(
+            for: asset,
+            targetSize: CGSize(width: 500, height: 500),
+            contentMode: .aspectFill,
+            options: options
+        ) { nsImage, info in
+            guard imageRequestGeneration == generation else { return }
+            guard let nsImage else {
+                loadError = (info?[PHImageErrorKey] as? Error)?.localizedDescription ?? "图片无法读取"
+                return
+            }
+            loadError = nil
+            image = Image(nsImage: nsImage)
+        }
+    }
 }
 
 private struct PhotoVideoPlayerView: View {
-    let asset: LibraryAsset
+    let assets: [LibraryAsset]
+    let initialIndex: Int
     let albumTitle: String
-    let onBack: () -> Void
+    let onBack: (String) -> Void
+    @State private var currentIndex: Int
     @State private var player: AVPlayer?
     @State private var requestID: PHImageRequestID?
     @State private var loadError: String?
     @State private var loadGeneration = UUID()
+    @State private var coverDescription: String?
+    @State private var coverFaces: FaceDetectionResult?
+    @State private var coverImage: NSImage?
+    @State private var people: [Person] = []
+    @State private var isShowingInfo = true
+    @State private var resultGeneration = UUID()
+    @State private var coverGeneration = UUID()
+    @State private var metadata: VideoMetadata?
+
+    init(assets: [LibraryAsset], initialIndex: Int, albumTitle: String, onBack: @escaping (String) -> Void) {
+        self.assets = assets
+        self.initialIndex = initialIndex
+        self.albumTitle = albumTitle
+        self.onBack = onBack
+        _currentIndex = State(initialValue: initialIndex)
+    }
+
+    private var asset: LibraryAsset { assets[currentIndex] }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button(action: onBack) {
+                Button { onBack(asset.localIdentifier) } label: {
                     Label("返回相册：\(albumTitle)", systemImage: "chevron.left")
                         .lineLimit(1)
                 }
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("backToPhotoLibrary")
                 Spacer()
-                Text("视频")
+                Text("视频 \(currentIndex + 1) / \(assets.count)")
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("videoPosition")
+                    .accessibilityLabel("视频 \(currentIndex + 1) / \(assets.count)")
             }
             .padding()
 
-            Group {
-                if let player {
-                    VideoPlayer(player: player)
-                        .padding(24)
-                } else if let loadError {
-                    ContentUnavailableView("视频无法播放", systemImage: "video.slash", description: Text(loadError))
-                } else {
-                    ProgressView("正在加载视频…")
+            HStack(spacing: 0) {
+                Group {
+                    if let player {
+                        VideoPlayer(player: player)
+                            .padding(24)
+                    } else if let loadError {
+                        ContentUnavailableView("视频无法播放", systemImage: "video.slash", description: Text(loadError))
+                    } else {
+                        ProgressView("正在加载视频…")
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black.opacity(0.85))
+
+                if isShowingInfo {
+                    VideoRecognitionInfoSidebar(
+                        metadata: metadata,
+                        coverImage: coverImage,
+                        ollamaText: coverDescription,
+                        faceResult: coverFaces,
+                        people: people
+                    )
+                    .frame(width: 300)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black.opacity(0.85))
+
+            HStack(spacing: 20) {
+                Button { navigate(to: currentIndex - 1) } label: {
+                    Label("上一个视频", systemImage: "chevron.left")
+                }
+                .accessibilityIdentifier("previousVideo")
+                .disabled(currentIndex == 0)
+                .keyboardShortcut(.leftArrow, modifiers: [])
+
+                Button { navigate(to: currentIndex + 1) } label: {
+                    Label("下一个视频", systemImage: "chevron.right")
+                }
+                .accessibilityIdentifier("nextVideo")
+                .disabled(currentIndex + 1 >= assets.count)
+                .keyboardShortcut(.rightArrow, modifiers: [])
+            }
+            .padding()
         }
         .frame(minWidth: 700, minHeight: 500)
-        .task(id: asset.revisionID) { loadVideo() }
-        .onDisappear {
-            loadGeneration = UUID()
-            if let requestID { PHImageManager.default().cancelImageRequest(requestID) }
-            player?.pause()
-            player = nil
+        .task(id: asset.revisionID) {
+            let currentAsset = asset
+            loadVideo()
+            loadCoverResults()
+            await loadVideoMetadata(for: currentAsset)
+            guard !Task.isCancelled, asset.revisionID == currentAsset.revisionID else { return }
+            await loadCoverImage()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
+            loadCoverResults()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyVideoCoverDidChange"))) { notification in
+            guard notification.object as? String == asset.revisionID else { return }
+            Task { await loadCoverImage() }
+        }
+        .onDisappear {
+            resetVideo()
+        }
+        .onMoveCommand { direction in
+            switch direction {
+            case .left: navigate(to: currentIndex - 1)
+            case .right: navigate(to: currentIndex + 1)
+            default: break
+            }
+        }
+        .onExitCommand { onBack(asset.localIdentifier) }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isShowingInfo.toggle()
+                } label: {
+                    Label("识别信息", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("videoRecognitionInfo")
+                .help("显示或隐藏视频信息和封面识别结果")
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+    }
+
+    private func navigate(to index: Int) {
+        guard assets.indices.contains(index), index != currentIndex else { return }
+        resetVideo()
+        currentIndex = index
+    }
+
+    private func resetVideo() {
+        loadGeneration = UUID()
+        resultGeneration = UUID()
+        coverGeneration = UUID()
+        if let requestID { PHImageManager.default().cancelImageRequest(requestID) }
+        requestID = nil
+        player?.pause()
+        player = nil
+        loadError = nil
+        metadata = nil
+        coverDescription = nil
+        coverFaces = nil
+        coverImage = nil
+        people = []
+    }
+
+    private func loadVideoMetadata(for currentAsset: LibraryAsset) async {
+        let cache = PhotoMetadataCache.shared
+        let session = cache.databaseSession
+        let cached = await cache.videoMetadata(for: currentAsset, session: session)
+        guard !Task.isCancelled, asset.revisionID == currentAsset.revisionID,
+              cache.databaseSession == session else { return }
+        guard let record = cached ?? VideoMetadataRecord.extract(from: currentAsset) else { return }
+        metadata = VideoMetadata(asset: currentAsset, record: record)
+
+        if cached == nil,
+           let latest = PHAsset.fetchAssets(withLocalIdentifiers: [currentAsset.localIdentifier], options: nil).firstObject,
+           latest.mediaType == .video,
+           VideoMetadataRevision(LibraryAsset(latest, databaseURL: currentAsset.databaseURL)) == VideoMetadataRevision(currentAsset),
+           !Task.isCancelled {
+            _ = await cache.saveVideoMetadata(record, for: currentAsset, session: session)
+        }
+    }
+
+    private func loadCoverResults() {
+        let generation = UUID()
+        resultGeneration = generation
+        PhotoMetadataCache.shared.ollamaText(for: asset) {
+            guard resultGeneration == generation else { return }
+            coverDescription = $0
+        }
+        PhotoMetadataCache.shared.faceDetectionResult(for: asset) {
+            guard resultGeneration == generation else { return }
+            coverFaces = $0
+        }
+        PhotoMetadataCache.shared.people {
+            guard resultGeneration == generation else { return }
+            people = $0
+        }
+    }
+
+    private func loadCoverImage() async {
+        let generation = UUID()
+        coverGeneration = generation
+        guard let url = try? VideoCoverStore.url(for: asset) else {
+            coverImage = nil
+            return
+        }
+        let cover = await Task.detached(priority: .userInitiated) {
+            VideoCoverStore.thumbnail(at: url, maximumSize: 600)
+        }.value
+        guard coverGeneration == generation, !Task.isCancelled else { return }
+        coverImage = cover.map { NSImage(cgImage: $0, size: .zero) }
     }
 
     private func loadVideo() {
@@ -636,6 +819,157 @@ private struct PhotoVideoPlayerView: View {
                 player.play()
             }
         }
+    }
+}
+
+extension VideoMetadataRecord {
+    static func extract(from asset: LibraryAsset) -> VideoMetadataRecord? {
+        guard case .photos(let video) = asset.source, asset.isVideo else { return nil }
+        let resources = PHAssetResource.assetResources(for: video)
+        let resource = resources.first { $0.type == .fullSizeVideo }
+            ?? resources.first { $0.type == .video }
+        let location = video.location.flatMap { $0.horizontalAccuracy >= 0 ? $0 : nil }
+        let duration = video.duration
+        return VideoMetadataRecord(
+            filename: resource?.originalFilename,
+            typeIdentifier: resource?.uniformTypeIdentifier,
+            duration: duration.isFinite && duration >= 0 ? duration : nil,
+            creationTime: asset.creationDate?.timeIntervalSince1970,
+            latitude: location?.coordinate.latitude,
+            longitude: location?.coordinate.longitude,
+            updatedAt: Date().timeIntervalSince1970
+        )
+    }
+}
+
+struct VideoMetadata {
+    let rows: [(String, String)]
+
+    init(asset: LibraryAsset, record: VideoMetadataRecord) {
+        var values: [(String, String)] = []
+        if let filename = record.filename {
+            values.append(("文件名", filename))
+        }
+        if let identifier = record.typeIdentifier {
+            let type = UTType(identifier)?.localizedDescription ?? identifier
+            values.append(("文件类型", type))
+        }
+        if asset.pixelWidth > 0 && asset.pixelHeight > 0 {
+            values.append(("分辨率", "\(asset.pixelWidth) × \(asset.pixelHeight)"))
+        }
+        if let duration = record.duration, let formatted = Self.formattedDuration(duration) {
+            values.append(("时长", formatted))
+        }
+        if let creationTime = record.creationTime {
+            let date = Date(timeIntervalSince1970: creationTime)
+            values.append(("拍摄时间", date.formatted(date: .abbreviated, time: .shortened)))
+        }
+        if let date = asset.modificationDate {
+            values.append(("修改时间", date.formatted(date: .abbreviated, time: .shortened)))
+        }
+        if let latitude = record.latitude, let longitude = record.longitude {
+            values.append(("位置", String(format: "%.5f, %.5f", latitude, longitude)))
+        }
+        values.append(("元数据更新时间", Date(timeIntervalSince1970: record.updatedAt).formatted(date: .abbreviated, time: .shortened)))
+        values.append(("状态", asset.isFavorite
+            ? AppLocalization.localizedString("已收藏", comment: "")
+            : AppLocalization.localizedString("未收藏", comment: "")))
+        rows = values
+    }
+
+    static func formattedDuration(_ duration: TimeInterval) -> String? {
+        guard duration.isFinite, duration >= 0 else { return nil }
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = duration >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
+        formatter.unitsStyle = .positional
+        formatter.zeroFormattingBehavior = .pad
+        return formatter.string(from: duration)
+    }
+}
+
+private struct VideoRecognitionInfoSidebar: View {
+    let metadata: VideoMetadata?
+    let coverImage: NSImage?
+    let ollamaText: String?
+    let faceResult: FaceDetectionResult?
+    let people: [Person]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("识别信息")
+                    .font(.title3.weight(.semibold))
+                    .accessibilityIdentifier("videoRecognitionInfoTitle")
+
+                if let metadata {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("视频信息").font(.headline)
+                            .accessibilityIdentifier("videoMetadataTitle")
+                        ForEach(Array(metadata.rows.enumerated()), id: \.offset) { _, row in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(row.0).foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text(row.1).multilineTextAlignment(.trailing).textSelection(.enabled)
+                            }
+                            Divider()
+                        }
+                    }
+                }
+                Text("以下结果仅针对提取的封面，不代表整个视频。")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("视频封面").font(.headline)
+                    if let coverImage {
+                        Image(nsImage: coverImage)
+                            .resizable().aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Text("尚未提取封面，请返回视频分类后选择“提取封面”。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Ollama 识别文字").font(.headline)
+                    if let ollamaText, !ollamaText.isEmpty {
+                        MarkdownTextView(markdown: ollamaText)
+                            .padding(10)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Text("暂无识别结果，请在视频分类中批量识别封面。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("封面人脸").font(.headline)
+                    if let faceResult {
+                        Text(faceResult.faceCount == 0 ? "未检测到人脸" : "检测到 \(faceResult.faceCount) 张人脸")
+                        ForEach(Array(faceResult.faces.enumerated()), id: \.offset) { index, face in
+                            if let personID = face.personID {
+                                let name = people.first(where: { $0.id == personID })?.displayName
+                                    ?? AppLocalization.localizedString("未知人物", comment: "")
+                                Text("人脸 \(index + 1)：\(name)")
+                            } else if let candidate = face.candidate {
+                                Text("人脸 \(index + 1)：可能是 \(candidate.displayName)（待确认）")
+                            } else {
+                                Text("人脸 \(index + 1)：未标注")
+                            }
+                        }
+                        .font(.caption)
+                    } else {
+                        Text("暂无人脸识别结果，请在视频分类中批量识别封面人脸。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
+        .background(.regularMaterial)
+        .accessibilityIdentifier("videoRecognitionInfoSidebar")
     }
 }
 

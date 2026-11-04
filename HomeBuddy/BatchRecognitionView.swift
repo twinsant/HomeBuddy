@@ -1,5 +1,7 @@
 import AppKit
+import AVFoundation
 import Combine
+import CryptoKit
 import ImageIO
 import Photos
 import SwiftUI
@@ -201,7 +203,10 @@ final class BatchRecognitionModel: ObservableObject {
     }
 
     private func imageData(for asset: LibraryAsset) async throws -> Data {
-        try await withTaskCancellationHandler {
+        if asset.isVideo {
+            return try VideoCoverStore.data(for: asset)
+        }
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let options = PHImageRequestOptions()
                 options.deliveryMode = .highQualityFormat
@@ -852,7 +857,10 @@ final class BatchFaceRecognitionModel: ObservableObject {
     }
 
     private func imageData(for asset: LibraryAsset) async throws -> (data: Data, orientation: CGImagePropertyOrientation) {
-        try await withCheckedThrowingContinuation { continuation in
+        if asset.isVideo {
+            return (try VideoCoverStore.data(for: asset), .up)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.resizeMode = .fast
@@ -907,6 +915,171 @@ final class BatchFaceRecognitionModel: ObservableObject {
                 AppLocalization.localizedString("人脸模型返回了无效的 512 维 embedding。", comment: "")
             }
         }
+    }
+}
+
+/// A cover belongs to a particular video revision, not to the location of the database.
+enum VideoCoverStore {
+    static let directoryName = "video-covers"
+
+    static func url(for asset: LibraryAsset) throws -> URL {
+        guard asset.isVideo, let databaseURL = asset.databaseURL,
+              PhotoMetadataCache.shared.databaseURL == databaseURL else {
+            throw DiskLibraryError.message("视频或数据库已变化，请重新打开任务。")
+        }
+        let key = "cover-v1|\(asset.localIdentifier)|\(asset.modificationDate?.timeIntervalSince1970 ?? 0)|\(asset.pixelWidth)|\(asset.pixelHeight)"
+        let name = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".jpg"
+        return databaseURL.deletingLastPathComponent().appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent(name)
+    }
+
+    static func data(for asset: LibraryAsset) throws -> Data {
+        let url = try url(for: asset)
+        guard let data = try? Data(contentsOf: url),
+              CGImageSourceCreateWithData(data as CFData, nil) != nil else {
+            throw DiskLibraryError.message("请先提取此视频的封面。")
+        }
+        return data
+    }
+
+    nonisolated static func thumbnail(at url: URL, maximumSize: Int) -> CGImage? {
+        guard maximumSize > 0,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumSize
+        ] as CFDictionary)
+    }
+
+    static func extract(for asset: LibraryAsset) async throws {
+        if (try? data(for: asset)) != nil { return }
+        guard case .photos(let video) = asset.source, asset.isVideo else {
+            throw DiskLibraryError.message("无法读取视频。")
+        }
+        let videoAsset: AVAsset = try await withCheckedThrowingContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.version = .current
+            PHImageManager.default().requestAVAsset(forVideo: video, options: options) { avAsset, _, info in
+                if let error = info?[PHImageErrorKey] as? Error {
+                    continuation.resume(throwing: error)
+                } else if let avAsset {
+                    continuation.resume(returning: avAsset)
+                } else {
+                    continuation.resume(throwing: DiskLibraryError.message("无法读取视频，可能需要从 iCloud 下载。"))
+                }
+            }
+        }
+        try Task.checkCancellation()
+        let generator = AVAssetImageGenerator(asset: videoAsset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 2400, height: 2400)
+        let (image, _) = try await generator.image(at: .zero)
+        try Task.checkCancellation()
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+            throw DiskLibraryError.message("无法生成视频封面。")
+        }
+        let destination = try url(for: asset)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Task.checkCancellation()
+        try jpeg.write(to: destination, options: .atomic)
+        NotificationCenter.default.post(name: .init("HomeBuddyVideoCoverDidChange"), object: asset.revisionID)
+    }
+}
+
+@MainActor
+final class BatchVideoCoverModel: ObservableObject {
+    let assets: [LibraryAsset]
+    @Published private(set) var completed = 0
+    @Published private(set) var currentName = ""
+    @Published private(set) var isRunning = false
+    @Published private(set) var failures: [BatchRecognitionFailure] = []
+    private var done = Set<String>()
+    private var task: Task<Void, Never>?
+    private var generation = UUID()
+
+    init(assets: [LibraryAsset]) { self.assets = assets }
+    deinit { task?.cancel() }
+
+    func start() {
+        if !isRunning && completed == assets.count {
+            done = Set(assets.filter { (try? VideoCoverStore.data(for: $0)) != nil }.map(\.localIdentifier))
+            completed = done.count
+        }
+        guard !isRunning, completed < assets.count else { return }
+        isRunning = true
+        failures = []
+        let run = UUID()
+        generation = run
+        task = Task { [weak self] in
+            guard let self else { return }
+            for asset in assets where !Task.isCancelled {
+                if done.contains(asset.localIdentifier) { continue }
+                currentName = asset.localIdentifier
+                do {
+                    try await VideoCoverStore.extract(for: asset)
+                    try Task.checkCancellation()
+                    guard generation == run else { return }
+                    done.insert(asset.localIdentifier)
+                    completed = done.count
+                } catch is CancellationError {
+                    break
+                } catch {
+                    guard generation == run else { return }
+                    failures.append(BatchRecognitionFailure(asset: asset, message: error.localizedDescription))
+                }
+            }
+            guard generation == run else { return }
+            currentName = ""
+            isRunning = false
+            task = nil
+        }
+    }
+
+    func pause() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        isRunning = false
+        currentName = ""
+    }
+}
+
+struct BatchVideoCoverView: View {
+    @ObservedObject var model: BatchVideoCoverModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("批量提取视频封面").font(.headline)
+            Text("封面保存在当前数据库目录的 video-covers 文件夹中。")
+                .font(.caption).foregroundStyle(.secondary)
+            ProgressView(value: Double(model.completed), total: Double(max(model.assets.count, 1)))
+            Text("已完成 \(model.completed) / \(model.assets.count)")
+            if !model.currentName.isEmpty {
+                Text(model.currentName).font(.caption).lineLimit(1).foregroundStyle(.secondary)
+            }
+            if !model.failures.isEmpty {
+                Text("失败 \(model.failures.count) 项，可重试：").foregroundStyle(.red)
+                ScrollView {
+                    VStack(alignment: .leading) {
+                        ForEach(model.failures) { failure in
+                            Text("\(failure.asset.localIdentifier)：\(failure.message)")
+                                .font(.caption).textSelection(.enabled)
+                        }
+                    }
+                }.frame(maxHeight: 140)
+            }
+            HStack {
+                Spacer()
+                if model.isRunning {
+                    Button("暂停") { model.pause() }
+                } else if model.completed < model.assets.count {
+                    Button(model.failures.isEmpty ? "继续" : "重试") { model.start() }
+                }
+            }
+        }.padding().frame(width: 380)
     }
 }
 

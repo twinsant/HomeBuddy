@@ -1,4 +1,4 @@
-//
+//o
 //  HomeBuddyTests.swift
 //  HomeBuddyTests
 //
@@ -14,15 +14,21 @@ import Testing
 nonisolated private final class PhotoTypeFixture: PHAsset, @unchecked Sendable {
     let fixtureType: PHAssetMediaType
     let fixtureSubtypes: PHAssetMediaSubtype
+    let fixtureID: String
+    let fixtureModificationDate: Date?
 
-    init(type: PHAssetMediaType, subtypes: PHAssetMediaSubtype) {
+    init(type: PHAssetMediaType, subtypes: PHAssetMediaSubtype, id: String = "fixture", modificationDate: Date? = nil) {
         fixtureType = type
         fixtureSubtypes = subtypes
+        fixtureID = id
+        fixtureModificationDate = modificationDate
         super.init()
     }
 
     override var mediaType: PHAssetMediaType { fixtureType }
     override var mediaSubtypes: PHAssetMediaSubtype { fixtureSubtypes }
+    override var localIdentifier: String { fixtureID }
+    override var modificationDate: Date? { fixtureModificationDate }
 }
 
 @MainActor
@@ -41,6 +47,81 @@ struct HomeBuddyTests {
         #expect(!LibraryAsset(PhotoTypeFixture(type: .image, subtypes: [])).isVideo)
         #expect(PhotoAlbum.videoAlbum.id == "virtual:videos")
         #expect(PhotoAlbum.videoAlbum.isVideoAlbum)
+    }
+
+    @Test func videoDurationFormattingHandlesInvalidAndLongDurations() {
+        #expect(VideoMetadata.formattedDuration(0) != nil)
+        #expect(VideoMetadata.formattedDuration(90) != nil)
+        #expect(VideoMetadata.formattedDuration(3601) != nil)
+        #expect(VideoMetadata.formattedDuration(-1) == nil)
+        #expect(VideoMetadata.formattedDuration(.infinity) == nil)
+        #expect(VideoMetadata.formattedDuration(.nan) == nil)
+    }
+
+    @Test func videoMetadataCachePreservesRecognitionAndSeparatesRevisions() throws {
+        var pointer: OpaquePointer?
+        #expect(sqlite3_open(":memory:", &pointer) == SQLITE_OK)
+        let database = try #require(pointer)
+        defer { sqlite3_close(database) }
+        #expect(sqlite3_exec(database, "CREATE TABLE photo_metadata(asset_id TEXT PRIMARY KEY, ollama_text TEXT); INSERT INTO photo_metadata VALUES ('video-id', 'existing result');", nil, nil, nil) == SQLITE_OK)
+        let cache = VideoMetadataDatabase(database: database)
+        try cache.migrate()
+        try cache.migrate()
+
+        let first = VideoMetadataRevision(identifier: "video-id", modificationTime: 1, width: 1920, height: 1080)
+        let second = VideoMetadataRevision(identifier: "video-id", modificationTime: 2, width: 1920, height: 1080)
+        let resized = VideoMetadataRevision(identifier: "video-id", modificationTime: 1, width: 1080, height: 1920)
+        let record = VideoMetadataRecord(filename: "test.mov", typeIdentifier: "com.apple.quicktime-movie",
+                                         duration: 123.5, creationTime: 10, latitude: 31.2, longitude: 121.5, updatedAt: 20)
+        let newer = VideoMetadataRecord(filename: "new.mov", typeIdentifier: nil, duration: nil,
+                                        creationTime: nil, latitude: nil, longitude: nil, updatedAt: 30)
+        #expect(cache.read(revision: first) == nil)
+        #expect(cache.write(record, revision: first))
+        #expect(cache.read(revision: first) == record)
+        #expect(cache.read(revision: second) == nil)
+        #expect(cache.read(revision: resized) == nil)
+        #expect(cache.write(newer, revision: second))
+        #expect(cache.write(record, revision: first))
+        #expect(cache.read(revision: second) == newer)
+        var query: OpaquePointer?
+        #expect(sqlite3_prepare_v2(database, "SELECT ollama_text FROM photo_metadata WHERE asset_id = 'video-id';", -1, &query, nil) == SQLITE_OK)
+        defer { sqlite3_finalize(query) }
+        #expect(sqlite3_step(query) == SQLITE_ROW)
+        #expect(String(cString: try #require(sqlite3_column_text(query, 0))) == "existing result")
+    }
+
+    @Test func videoCoverPathsAreVersionedAndConfinedToCacheDirectory() throws {
+        let id = "../" + UUID().uuidString
+        let video = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [], id: id, modificationDate: Date(timeIntervalSince1970: 1)))
+        let changed = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [], id: id, modificationDate: Date(timeIntervalSince1970: 2)))
+        let url = try VideoCoverStore.url(for: video)
+        #expect(url.deletingLastPathComponent().lastPathComponent == "video-covers")
+        #expect(url.pathExtension == "jpg")
+        #expect(url == (try VideoCoverStore.url(for: video)))
+        #expect(url != (try VideoCoverStore.url(for: changed)))
+        #expect(throws: (any Error).self) { try VideoCoverStore.data(for: video) }
+        let photo = LibraryAsset(PhotoTypeFixture(type: .image, subtypes: []))
+        #expect(throws: (any Error).self) { try VideoCoverStore.url(for: photo) }
+        let oldDatabase = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: []), databaseURL: URL(fileURLWithPath: "/tmp/old-cache.sqlite"))
+        #expect(throws: (any Error).self) { try VideoCoverStore.url(for: oldDatabase) }
+    }
+
+    @Test func videoCoverThumbnailScalesAndRejectsUnreadableFiles() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(VideoCoverStore.thumbnail(at: url, maximumSize: 500) == nil)
+        try Data("not an image".utf8).write(to: url)
+        #expect(VideoCoverStore.thumbnail(at: url, maximumSize: 500) == nil)
+
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1000, pixelsHigh: 400,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let jpeg = try #require(bitmap.representation(using: .jpeg, properties: [:]))
+        try jpeg.write(to: url)
+        let thumbnail = try #require(VideoCoverStore.thumbnail(at: url, maximumSize: 500))
+        #expect(thumbnail.width == 500)
+        #expect(thumbnail.height == 200)
+        #expect(VideoCoverStore.thumbnail(at: url, maximumSize: 0) == nil)
     }
 
     @Test func horizontalSwipeNavigatesOnceWithoutMomentum() {

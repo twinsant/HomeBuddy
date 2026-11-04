@@ -129,6 +129,62 @@ final class HomeBuddyUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoRecognitionInfoCanBeToggled() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let album = app.buttons["videoAlbum"]
+        guard album.waitForExistence(timeout: 15), album.isEnabled else {
+            throw XCTSkip("需要已授权访问系统照片图库")
+        }
+        album.click()
+        let thumbnail = app.buttons["photoThumbnail-0"]
+        guard thumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要照片图库中至少有一个视频")
+        }
+        thumbnail.click()
+        let info = app.buttons["videoRecognitionInfo"]
+        let title = app.staticTexts["videoRecognitionInfoTitle"]
+        XCTAssertTrue(info.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["videoMetadataTitle"].waitForExistence(timeout: 5))
+        info.click()
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        info.click()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        app.buttons["backToPhotoLibrary"].click()
+    }
+
+    @MainActor
+    func testVideoArrowKeysNavigateWithinAlbum() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let album = app.buttons["videoAlbum"]
+        guard album.waitForExistence(timeout: 15), album.isEnabled else {
+            throw XCTSkip("需要已授权访问系统照片图库")
+        }
+        album.click()
+        let thumbnail = app.buttons["photoThumbnail-0"]
+        guard thumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要照片图库中至少有两个视频")
+        }
+        thumbnail.click()
+        let next = app.buttons["nextVideo"]
+        let previous = app.buttons["previousVideo"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        guard next.isEnabled else { throw XCTSkip("需要照片图库中至少有两个视频") }
+        let position = app.staticTexts["videoPosition"]
+        XCTAssertTrue(position.waitForExistence(timeout: 5))
+        XCTAssertFalse(previous.isEnabled)
+        app.typeKey(.rightArrow, modifierFlags: [])
+        let advanced = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: previous)
+        XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 10), .completed)
+        app.typeKey(.leftArrow, modifierFlags: [])
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: previous)
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 10), .completed)
+        XCTAssertFalse(previous.isEnabled)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

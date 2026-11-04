@@ -308,6 +308,7 @@ final class PhotoMetadataCache {
     private let queue = DispatchQueue(label: "com.twinsant.HomeBuddy.photo-metadata-cache")
     private var database: OpaquePointer?
     private var securityScopedDirectoryURL: URL?
+    private var databaseSessionValue = UUID()
 
     private init() {
         queue.sync {
@@ -321,6 +322,10 @@ final class PhotoMetadataCache {
 
     var databaseURL: URL? {
         queue.sync { databaseURLValue }
+    }
+
+    var databaseSession: UUID {
+        queue.sync { databaseSessionValue }
     }
 
     var storageDirectoryURL: URL? {
@@ -380,9 +385,44 @@ final class PhotoMetadataCache {
                     try fileManager.removeItem(at: destinationURL)
                 }
                 try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                let sourceCovers = sourceURL.deletingLastPathComponent().appendingPathComponent(VideoCoverStore.directoryName, isDirectory: true)
+                let destinationCovers = destinationDirectory.appendingPathComponent(VideoCoverStore.directoryName, isDirectory: true)
+                if fileManager.fileExists(atPath: sourceCovers.path) {
+                    try fileManager.createDirectory(at: destinationCovers, withIntermediateDirectories: true)
+                    for cover in try fileManager.contentsOfDirectory(at: sourceCovers, includingPropertiesForKeys: nil) {
+                        let destination = destinationCovers.appendingPathComponent(cover.lastPathComponent)
+                        if !fileManager.fileExists(atPath: destination.path) {
+                            try fileManager.copyItem(at: cover, to: destination)
+                        }
+                    }
+                }
                 return true
             } catch {
                 return false
+            }
+        }
+    }
+
+    func videoMetadata(for asset: LibraryAsset, session: UUID) async -> VideoMetadataRecord? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                guard databaseSessionValue == session, accepts(asset), asset.isVideo, let database else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: VideoMetadataDatabase(database: database).read(revision: VideoMetadataRevision(asset)))
+            }
+        }
+    }
+
+    func saveVideoMetadata(_ metadata: VideoMetadataRecord, for asset: LibraryAsset, session: UUID) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                guard databaseSessionValue == session, accepts(asset), asset.isVideo, let database else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                continuation.resume(returning: VideoMetadataDatabase(database: database).write(metadata, revision: VideoMetadataRevision(asset)))
             }
         }
     }
@@ -820,6 +860,7 @@ final class PhotoMetadataCache {
             createTable()
             do {
                 try DiskLibraryDatabase(database: database!).migrate()
+                try VideoMetadataDatabase(database: database!).migrate()
             } catch {
                 closeDatabase()
                 return false
@@ -831,6 +872,7 @@ final class PhotoMetadataCache {
     }
 
     private func closeDatabase() {
+        databaseSessionValue = UUID()
         if let database {
             sqlite3_close(database)
             self.database = nil
@@ -1557,5 +1599,96 @@ final class PhotoMetadataCache {
     private func text(from statement: OpaquePointer?, at index: Int32) -> String? {
         guard let value = sqlite3_column_text(statement, index) else { return nil }
         return String(cString: value)
+    }
+}
+
+nonisolated struct VideoMetadataRecord: Codable, Equatable, Sendable {
+    let filename: String?
+    let typeIdentifier: String?
+    let duration: Double?
+    let creationTime: Double?
+    let latitude: Double?
+    let longitude: Double?
+    let updatedAt: Double
+}
+
+nonisolated struct VideoMetadataRevision: Equatable, Sendable {
+    let identifier: String
+    let modificationTime: Double
+    let width: Int
+    let height: Int
+
+    init(_ asset: LibraryAsset) {
+        identifier = asset.localIdentifier
+        modificationTime = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        width = asset.pixelWidth
+        height = asset.pixelHeight
+    }
+
+    init(identifier: String, modificationTime: Double, width: Int, height: Int) {
+        self.identifier = identifier
+        self.modificationTime = modificationTime
+        self.width = width
+        self.height = height
+    }
+}
+
+nonisolated struct VideoMetadataDatabase {
+    let database: OpaquePointer
+    private static let version = 1
+
+    func migrate() throws {
+        let sql = """
+        CREATE TABLE IF NOT EXISTS video_metadata (
+            asset_id TEXT NOT NULL,
+            modification_time REAL NOT NULL,
+            pixel_width INTEGER NOT NULL,
+            pixel_height INTEGER NOT NULL,
+            metadata_version INTEGER NOT NULL,
+            metadata_json TEXT NOT NULL,
+            metadata_updated_at REAL NOT NULL,
+            PRIMARY KEY (asset_id, modification_time, pixel_width, pixel_height, metadata_version)
+        );
+        """
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw DiskLibraryError.message(String(cString: sqlite3_errmsg(database)))
+        }
+    }
+
+    func read(revision: VideoMetadataRevision) -> VideoMetadataRecord? {
+        let sql = "SELECT metadata_json FROM video_metadata WHERE asset_id = ? AND modification_time = ? AND pixel_width = ? AND pixel_height = ? AND metadata_version = ?;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+        bind(revision, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0),
+              let data = String(cString: text).data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(VideoMetadataRecord.self, from: data)
+    }
+
+    @discardableResult
+    func write(_ metadata: VideoMetadataRecord, revision: VideoMetadataRevision) -> Bool {
+        guard let data = try? JSONEncoder().encode(metadata), let json = String(data: data, encoding: .utf8) else { return false }
+        let sql = """
+        INSERT INTO video_metadata (asset_id, modification_time, pixel_width, pixel_height, metadata_version, metadata_json, metadata_updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(asset_id, modification_time, pixel_width, pixel_height, metadata_version)
+        DO UPDATE SET metadata_json = excluded.metadata_json, metadata_updated_at = excluded.metadata_updated_at;
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        bind(revision, to: statement)
+        sqlite3_bind_text(statement, 6, json, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_double(statement, 7, metadata.updatedAt)
+        return sqlite3_step(statement) == SQLITE_DONE
+    }
+
+    private func bind(_ revision: VideoMetadataRevision, to statement: OpaquePointer?) {
+        sqlite3_bind_text(statement, 1, revision.identifier, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_double(statement, 2, revision.modificationTime)
+        sqlite3_bind_int64(statement, 3, Int64(revision.width))
+        sqlite3_bind_int64(statement, 4, Int64(revision.height))
+        sqlite3_bind_int(statement, 5, Int32(Self.version))
     }
 }

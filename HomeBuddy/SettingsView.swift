@@ -68,6 +68,14 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Text("打开视频时，其元信息（包括可用的拍摄位置）会缓存在该数据库中。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("提取的视频封面以 JPEG 文件保存在此目录下的 video-covers 文件夹中；删除数据库文件不会删除这些封面。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Text("通过目录选择器确认后，HomeBuddy 才能获得该目录的访问权限。隐藏目录（例如 ~/.homebuddy）也可以选择。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
