@@ -520,9 +520,18 @@ private struct PhotoSidebarView: View {
     let addDirectory: () -> Void
 
     var body: some View {
-        List {
-            Section("磁盘目录") {
+        // 审核被拒：侧栏在小窗口下无法滚动。List 在 macOS 27 的侧栏列里没给出可用的
+        // 滚动区域，换成显式 ScrollView，滚动行为由我们自己保证。
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                SidebarSectionHeader("磁盘目录")
                 Button(action: addDirectory) { Label("添加目录…", systemImage: "folder.badge.plus") }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+
                 ForEach(diskLibrary.directories) { directory in
                     Button { selectedAlbumID = directory.id } label: {
                         HStack {
@@ -536,6 +545,7 @@ private struct PhotoSidebarView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                         .background(selectedAlbumID == directory.id ? Color.accentColor.opacity(0.2) : .clear)
                     }
@@ -549,14 +559,15 @@ private struct PhotoSidebarView: View {
                             .disabled(diskLibrary.scanningIDs.contains(directory.id))
                     }
                 }
-            }
-            Section("人物") {
+
+                SidebarSectionHeader("人物")
                 Button { selectedAlbumID = PhotoAlbum.faceAlbum.id } label: {
                     PhotoAlbumRow(album: .faceAlbum, isSelected: selectedAlbumID == PhotoAlbum.faceAlbum.id)
                 }
                 .buttonStyle(.plain)
-            }
-            Section("视频") {
+                .padding(.horizontal, 8)
+
+                SidebarSectionHeader("视频")
                 Button { selectedAlbumID = PhotoAlbum.videoAlbum.id } label: {
                     PhotoAlbumRow(
                         album: .videoAlbum,
@@ -567,8 +578,9 @@ private struct PhotoSidebarView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("videoAlbum")
                 .disabled(!hasPhotoAccess)
-            }
-            Section("系统相册") {
+                .padding(.horizontal, 8)
+
+                SidebarSectionHeader("系统相册")
                 if hasPhotoAccess {
                     ForEach(albums.filter { !$0.isFaceAlbum && !$0.isVideoAlbum }) { album in
                         Button { selectedAlbumID = album.id } label: {
@@ -579,13 +591,34 @@ private struct PhotoSidebarView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .padding(.horizontal, 8)
                     }
                 } else {
-                    Text("尚未允许访问照片图库").font(.caption).foregroundStyle(.secondary)
-                    Button("打开照片设置", action: openSettings)
+                    Text("尚未允许访问照片图库").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
+                    Button("打开照片设置", action: openSettings).padding(.horizontal, 8)
                 }
             }
+            .padding(.vertical, 8)
         }
+        .scrollIndicators(.visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct SidebarSectionHeader: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.top, 12)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
