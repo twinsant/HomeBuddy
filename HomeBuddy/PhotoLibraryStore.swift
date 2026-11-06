@@ -625,14 +625,14 @@ final class PhotoMetadataCache {
         }
     }
 
-    func personAlbumSummaries(completion: @escaping ([PersonAlbumSummary]) -> Void) {
+    func personAlbumSummaries(assetIDs: Set<String>? = nil, completion: @escaping ([PersonAlbumSummary]) -> Void) {
         queue.async { [weak self] in
-            let summaries = self?.readPersonAlbumSummaries() ?? []
+            let summaries = self?.readPersonAlbumSummaries(assetIDs: assetIDs) ?? []
             DispatchQueue.main.async { completion(summaries) }
         }
     }
 
-    func savePerson(named displayName: String, completion: @escaping (Person?) -> Void) {
+    func savePerson(named displayName: String, expectedSession: UUID? = nil, completion: @escaping (Person?) -> Void) {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             DispatchQueue.main.async { completion(nil) }
@@ -640,7 +640,7 @@ final class PhotoMetadataCache {
         }
         let person = Person(id: UUID().uuidString, displayName: name)
         queue.async { [weak self] in
-            guard let self else {
+            guard let self, expectedSession.map({ $0 == self.databaseSessionValue }) ?? true else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
@@ -657,6 +657,8 @@ final class PhotoMetadataCache {
         _ personID: String?,
         faceIndex: Int,
         for asset: LibraryAsset,
+        expectedFaceBox: CGRect? = nil,
+        expectedSession: UUID? = nil,
         completion: ((Bool) -> Void)? = nil
     ) {
         let identifier = asset.localIdentifier
@@ -664,7 +666,17 @@ final class PhotoMetadataCache {
         let width = asset.pixelWidth
         let height = asset.pixelHeight
         queue.async { [weak self] in
-            let succeeded = self?.accepts(asset) == true && (self?.writeFacePersonID(
+            let currentResult = expectedFaceBox.flatMap { _ in
+                self?.readFaceDetectionResult(
+                    identifier: identifier, modificationTime: modificationTime, width: width, height: height,
+                    detectorVersion: FaceDetectionResult.currentDetectorVersion
+                )
+            }
+            let faceMatches = expectedFaceBox.map { box in
+                currentResult.map { $0.faces.indices.contains(faceIndex) && $0.faces[faceIndex].box == box } ?? false
+            } ?? true
+            let sessionMatches = expectedSession.map { self?.databaseSessionValue == $0 } ?? true
+            let succeeded = self?.accepts(asset) == true && sessionMatches && faceMatches && (self?.writeFacePersonID(
                 personID,
                 faceIndex: faceIndex,
                 identifier: identifier,
@@ -1212,24 +1224,27 @@ final class PhotoMetadataCache {
             JOIN detected_faces f ON f.result_id = r.id
             JOIN people p ON p.person_id = f.candidate_person_id
             WHERE r.revision_rank = 1 AND f.person_id IS NULL
+        ), scoped_faces AS (
+            SELECT * FROM person_faces
+            WHERE ?1 IS NULL OR asset_id IN (SELECT value FROM json_each(?1))
         ), ranked_faces AS (
             SELECT *, ROW_NUMBER() OVER (
                 PARTITION BY person_id
                 ORDER BY is_recognized DESC, detected_at DESC, asset_id, face_index
             ) AS avatar_rank
-            FROM person_faces
+            FROM scoped_faces
         ), summaries AS (
             SELECT person_id, display_name,
                    COUNT(DISTINCT CASE WHEN is_recognized = 1 THEN asset_id END) AS recognized_count,
                    COUNT(DISTINCT CASE WHEN is_recognized = 0 THEN asset_id END) AS potential_count
-            FROM person_faces
+            FROM scoped_faces
             GROUP BY person_id, display_name
         )
         SELECT s.person_id, s.display_name, s.recognized_count, s.potential_count,
                avatar.asset_id, avatar.x, avatar.y, avatar.width, avatar.height,
                rows.asset_id
         FROM summaries s
-        JOIN person_faces rows ON rows.person_id = s.person_id
+        JOIN scoped_faces rows ON rows.person_id = s.person_id
         LEFT JOIN ranked_faces avatar ON avatar.person_id = s.person_id AND avatar.avatar_rank = 1
         ORDER BY (s.recognized_count + s.potential_count) DESC,
                  s.display_name COLLATE NOCASE, s.person_id, rows.asset_id;
@@ -1253,11 +1268,16 @@ final class PhotoMetadataCache {
         return result
     }
 
-    private func readPersonAlbumSummaries() -> [PersonAlbumSummary] {
+    private func readPersonAlbumSummaries(assetIDs: Set<String>?) -> [PersonAlbumSummary] {
         guard let database else { return [] }
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, Self.personAlbumSummarySQL, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
+        if let assetIDs {
+            guard let data = try? JSONEncoder().encode(Array(assetIDs)),
+                  let json = String(data: data, encoding: .utf8) else { return [] }
+            bindText(json, to: statement, at: 1)
+        }
 
         var people: [String: Person] = [:]
         var counts: [String: (recognized: Int, potential: Int)] = [:]

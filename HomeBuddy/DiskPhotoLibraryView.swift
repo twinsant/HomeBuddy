@@ -6,6 +6,7 @@ struct DiskPhotoLibraryView: View {
     let revision: Int
     let isScanning: Bool
     let minimumImageLongEdge: Int
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
     @State private var images: [DiskImage] = []
     @State private var errorMessage: String?
     @State private var isLoading = true
@@ -26,8 +27,8 @@ struct DiskPhotoLibraryView: View {
             } else {
                 PhotoLibraryView(
                     album: PhotoAlbum(id: directory.id, title: directory.title, isAllPhotos: false, isFaceAlbum: false, isRecents: false),
-                    assets: images.map { LibraryAsset(directory: directory, image: $0) },
-                    assetsRevision: "\(directory.id):\(revision)",
+                    assets: hiddenMedia.visibleAssets(images.map { LibraryAsset(directory: directory, image: $0) }),
+                    assetsRevision: "\(directory.id):\(revision):\(hiddenMedia.revision)",
                     minimumImageLongEdge: minimumImageLongEdge
                 )
             }

@@ -49,6 +49,71 @@ struct HomeBuddyTests {
         #expect(PhotoAlbum.videoAlbum.isVideoAlbum)
     }
 
+    @Test func hiddenMediaRequiresPasswordAndRemainsHiddenAfterRestart() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("hidden.json")
+        let photo = LibraryAsset(PhotoTypeFixture(type: .image, subtypes: [], id: "photo-1"))
+        let video = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [], id: "video-1"))
+        var storedPassword: Data?
+        var input = "correct-password"
+        var errors: [String] = []
+        func makeStore() -> HiddenMediaStore {
+            HiddenMediaStore(fileURL: file, passwordReader: { storedPassword },
+                             passwordWriter: { storedPassword = $0 }, prompt: { _ in input },
+                             errorPresenter: { errors.append($0) })
+        }
+        let store = makeStore()
+        #expect(store.isHiding)
+        store.toggleHidden(photo)
+        store.toggleHidden(video)
+        #expect(store.visibleAssets([photo, video]).isEmpty)
+        #expect(storedPassword == Data("correct-password".utf8))
+
+        input = "incorrect-password"
+        store.setHiding(false)
+        #expect(store.isHiding)
+        #expect(!errors.isEmpty)
+        input = "correct-password"
+        store.setHiding(false)
+        #expect(!store.isHiding)
+        #expect(store.visibleAssets([photo, video]).count == 2)
+        store.toggleHidden(photo)
+        store.setHiding(true)
+        #expect(store.visibleAssets([photo, video]).map(\.localIdentifier) == [photo.localIdentifier])
+
+        let restarted = makeStore()
+        #expect(restarted.isHiding)
+        #expect(restarted.isVisible(photo))
+        #expect(!restarted.isVisible(video))
+        storedPassword = nil
+        restarted.setHiding(false)
+        restarted.toggleHidden(photo)
+        #expect(restarted.isHiding)
+        #expect(storedPassword == nil)
+        #expect(!restarted.isVisible(video))
+    }
+
+    @Test func hiddenMediaUsesStableDiskPathsAndFailsClosedOnCorruption() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = DiskDirectory(id: "root", title: "root", path: directory.path, bookmark: Data(), lastScan: nil, imageCount: 1)
+        let child = DiskDirectory(id: "child", title: "child", path: directory.appendingPathComponent("sub").path,
+                                  bookmark: Data(), lastScan: nil, imageCount: 1)
+        let first = DiskImage(id: "disk:first", relativePath: "sub/a.jpg", modificationTime: 1, byteSize: 1, width: 10, height: 10)
+        let second = DiskImage(id: "disk:second", relativePath: "a.jpg", modificationTime: 2, byteSize: 2, width: 20, height: 20)
+        let firstAsset = LibraryAsset(directory: root, image: first)
+        let secondAsset = LibraryAsset(directory: child, image: second)
+        #expect(HiddenMediaStore.identity(for: firstAsset) == HiddenMediaStore.identity(for: secondAsset))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("hidden.json")
+        try Data("invalid".utf8).write(to: file)
+        let store = HiddenMediaStore(fileURL: file, errorPresenter: { _ in })
+        #expect(store.isHiding)
+        #expect(!store.isVisible(firstAsset))
+        #expect(store.visibleAssets([firstAsset, secondAsset]).isEmpty)
+    }
+
     @Test func videoDurationFormattingHandlesInvalidAndLongDurations() {
         #expect(VideoMetadata.formattedDuration(0) != nil)
         #expect(VideoMetadata.formattedDuration(90) != nil)
@@ -122,6 +187,101 @@ struct HomeBuddyTests {
         #expect(thumbnail.width == 500)
         #expect(thumbnail.height == 200)
         #expect(VideoCoverStore.thumbnail(at: url, maximumSize: 0) == nil)
+    }
+
+    @Test func videoCoverCountsAndProgressUseValidCurrentCovers() async throws {
+        let id = UUID().uuidString
+        let cached = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [], id: id + "-cached"))
+        let missing = LibraryAsset(PhotoTypeFixture(type: .video, subtypes: [], id: id + "-missing"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(id, isDirectory: true)
+        let cachedURL = directory.appendingPathComponent("cached.jpg")
+        let missingURL = directory.appendingPathComponent("missing.jpg")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let jpeg = try #require(bitmap.representation(using: .jpeg, properties: [:]))
+        try jpeg.write(to: cachedURL)
+        try Data("invalid".utf8).write(to: missingURL)
+
+        let paths = [(cached.localIdentifier, cachedURL), (missing.localIdentifier, missingURL)]
+        let existing = await VideoCoverStore.existingCoverIDs(at: paths)
+        #expect(existing == [cached.localIdentifier])
+        let model = BatchVideoCoverModel(assets: [cached, missing], existingCovers: { _ in
+            await VideoCoverStore.existingCoverIDs(at: paths)
+        }, extractCover: { _ in
+            throw DiskLibraryError.message("fixture failure")
+        })
+        model.startOrResume()
+        for _ in 0..<200 where model.phase == .running {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.phase == .paused)
+        #expect(model.completed == 1)
+        #expect(model.remainingCount == 1)
+        #expect(model.progress == 0.5)
+        #expect(model.failures.count == 1)
+
+        try jpeg.write(to: missingURL)
+        model.startOrResume()
+        for _ in 0..<200 where model.phase == .running {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.phase == .finished)
+        #expect(model.completed == 2)
+        #expect(model.remainingCount == 0)
+        #expect(model.failures.isEmpty)
+
+        try FileManager.default.removeItem(at: cachedURL)
+        model.startOrResume()
+        for _ in 0..<200 where model.phase == .running {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.phase == .paused)
+        #expect(model.completed == 1)
+        #expect(model.remainingCount == 1)
+    }
+
+    @Test func emptyVideoCoverTaskFinishes() async throws {
+        let model = BatchVideoCoverModel(assets: [])
+        model.startOrResume()
+        model.pause()
+        #expect(model.phase == .paused)
+        model.startOrResume()
+        for _ in 0..<200 where model.phase == .running {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.phase == .finished)
+        #expect(model.progress == 1)
+        #expect(model.remainingCount == 0)
+    }
+
+    @Test func faceOverlayFitsCoverAndFlipsVisionCoordinates() {
+        let portrait = FaceOverlayGeometry.imageRect(
+            imageSize: CGSize(width: 600, height: 900),
+            viewportSize: CGSize(width: 260, height: 390), padding: 0
+        )
+        #expect(portrait == CGRect(x: 0, y: 0, width: 260, height: 390))
+        let face = FaceOverlayGeometry.faceRect(CGRect(x: 0.25, y: 0.5, width: 0.5, height: 0.25), in: portrait)
+        #expect(face == CGRect(x: 65, y: 97.5, width: 130, height: 97.5))
+
+        let landscape = FaceOverlayGeometry.imageRect(
+            imageSize: CGSize(width: 400, height: 200),
+            viewportSize: CGSize(width: 300, height: 300), padding: 0
+        )
+        #expect(landscape == CGRect(x: 0, y: 75, width: 300, height: 150))
+        let upperLeft = FaceOverlayGeometry.faceRect(CGRect(x: 0, y: 0.8, width: 0.2, height: 0.2), in: landscape)
+        #expect(upperLeft == CGRect(x: 0, y: 75, width: 60, height: 30))
+    }
+
+    @Test func faceOverlayKeepsPhotoViewerPadding() {
+        let rect = FaceOverlayGeometry.imageRect(
+            imageSize: CGSize(width: 400, height: 200),
+            viewportSize: CGSize(width: 400, height: 300), padding: 24
+        )
+        #expect(rect == CGRect(x: 24, y: 62, width: 352, height: 176))
+        #expect(FaceOverlayGeometry.imageRect(imageSize: .zero, viewportSize: CGSize(width: 300, height: 300), padding: 0) == .zero)
     }
 
     @Test func horizontalSwipeNavigatesOnceWithoutMomentum() {
@@ -397,6 +557,43 @@ struct HomeBuddyTests {
         #expect(summaries["p2"]?.recognized == 1)
         #expect(summaries["p2"]?.potential == 1)
         #expect(summaries["p2"]?.avatarAsset == "photo2")
+
+        sqlite3_reset(statement)
+        let videos = """
+            INSERT INTO face_detection_results VALUES
+                (4, 'video1', 1, 'facedetect-antelopev2-1', 4),
+                (5, 'video2', 1, 'facedetect-antelopev2-1', 5);
+            INSERT INTO detected_faces VALUES
+                (4, 0, 'p1', NULL, 0.1, 0.2, 0.3, 0.4),
+                (5, 0, NULL, 'p1', 0.2, 0.3, 0.2, 0.3),
+                (5, 1, NULL, 'p2', 0.2, 0.3, 0.2, 0.3);
+            """
+        #expect(sqlite3_exec(database, videos, nil, nil, nil) == SQLITE_OK)
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        #expect(sqlite3_bind_text(statement, 1, "[\"video1\",\"video2\"]", -1, transient) == SQLITE_OK)
+        var videoSummaries: [String: (recognized: Int, potential: Int, avatarAsset: String, assets: Set<String>)] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = sqlite3_column_text(statement, 0),
+                  let avatar = sqlite3_column_text(statement, 4),
+                  let asset = sqlite3_column_text(statement, 9) else { continue }
+            let personID = String(cString: id)
+            var summary = videoSummaries[personID] ?? (
+                Int(sqlite3_column_int(statement, 2)), Int(sqlite3_column_int(statement, 3)),
+                String(cString: avatar), []
+            )
+            summary.assets.insert(String(cString: asset))
+            videoSummaries[personID] = summary
+        }
+        #expect(videoSummaries["p1"]?.recognized == 1)
+        #expect(videoSummaries["p1"]?.potential == 1)
+        #expect(videoSummaries["p1"]?.avatarAsset == "video1")
+        #expect(videoSummaries["p1"]?.assets == Set(["video1", "video2"]))
+        #expect(videoSummaries["p2"]?.recognized == 0)
+        #expect(videoSummaries["p2"]?.potential == 1)
+        #expect(videoSummaries["p2"]?.avatarAsset == "video2")
+        sqlite3_reset(statement)
+        #expect(sqlite3_bind_text(statement, 1, "[]", -1, transient) == SQLITE_OK)
+        #expect(sqlite3_step(statement) == SQLITE_DONE)
     }
 
 }

@@ -14,6 +14,7 @@ struct ContentView: View {
     @StateObject private var diskLibrary = DiskLibraryStore()
     @StateObject private var batchRecognitionModels = BatchRecognitionModelStore()
     @StateObject private var batchFaceRecognitionModels = BatchFaceRecognitionModelStore()
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
     @State private var selectedAlbumID: String?
     @State private var minimumDiskImageLongEdge = 0
     @State private var isShowingBatchRecognition = false
@@ -25,6 +26,9 @@ struct ContentView: View {
     @State private var faceModelReady = FaceRecognitionConfiguration.modelURL() != nil
     @State private var pendingOllamaCount: Int?
     @State private var pendingFaceCount: Int?
+    @State private var pendingVideoCoverCount: Int?
+    @State private var videoCoverRevision = 0
+    @State private var videoCoverCountRequest = UUID()
     @State private var videoCoverModel: BatchVideoCoverModel?
     @State private var isShowingVideoCovers = false
 
@@ -32,10 +36,11 @@ struct ContentView: View {
         NavigationSplitView {
             PhotoSidebarView(
                 albums: photoLibrary.albums,
-                photoCounts: photoLibrary.photoCounts,
+                photoCounts: hiddenMedia.canShowUnfilteredCounts ? photoLibrary.photoCounts : [:],
                 diskLibrary: diskLibrary,
                 selectedAlbumID: $selectedAlbumID,
                 hasPhotoAccess: hasPhotoAccess,
+                showDiskCounts: hiddenMedia.canShowUnfilteredCounts,
                 openSettings: openPhotoSettings,
                 addDirectory: {
                     Task {
@@ -59,6 +64,14 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Text("HomeBuddy")
                     .font(.headline)
+
+                Toggle(isOn: Binding(get: { hiddenMedia.isHiding }, set: { hiddenMedia.setHiding($0) })) {
+                    Label("隐藏已标记内容", systemImage: hiddenMedia.isHiding ? "eye.slash" : "eye")
+                }
+                .toggleStyle(.button)
+                .scaleEffect(0.5)
+                .accessibilityIdentifier("hideMarkedMedia")
+                .help(hiddenMedia.isHiding ? "已隐藏标记的照片和视频；关闭需输入密码" : "正在显示隐藏内容；点击立即隐藏")
 
                 Button {
                     if let selectedDirectory {
@@ -89,7 +102,11 @@ struct ContentView: View {
                     Button {
                         Task { await showVideoCovers() }
                     } label: {
-                        Label("提取封面", systemImage: "film.stack")
+                        Label {
+                            Text("提取封面")
+                        } icon: {
+                            videoCoverToolbarIcon
+                        }
                     }
                     .accessibilityIdentifier("batchVideoCovers")
                     .help("批量提取并保存视频封面")
@@ -128,7 +145,7 @@ struct ContentView: View {
         }
         .popover(isPresented: $isShowingVideoCovers) {
             if let videoCoverModel {
-                BatchVideoCoverView(model: videoCoverModel)
+                BatchVideoCoverView(model: videoCoverModel, isPresented: $isShowingVideoCovers)
                     .environment(\.locale, AppLocalization.locale)
             }
         }
@@ -169,8 +186,22 @@ struct ContentView: View {
         }
         .onChange(of: photoLibrary.albums) { _, _ in repairSelection() }
         .onChange(of: diskLibrary.directories) { _, _ in repairSelection() }
+        .onChange(of: hiddenMedia.revision) { _, _ in
+            batchRecognitionModels.reset()
+            batchFaceRecognitionModels.reset()
+            videoCoverModel?.pause()
+            videoCoverModel = nil
+            batchRecognitionModel = nil
+            batchFaceRecognitionModel = nil
+            isShowingVideoCovers = false
+            isShowingBatchRecognition = false
+            isShowingBatchFaceRecognition = false
+        }
         .task(id: pendingCountTaskKey) {
             await refreshPendingRecognitionCounts()
+        }
+        .task(id: "\(pendingCountTaskKey)|\(videoCoverRevision)") {
+            await refreshPendingVideoCoverCount()
         }
         .onChange(of: batchRecognitionModels.activeModel == nil) { wasIdle, isIdle in
             if !wasIdle && isIdle { Task { await refreshPendingRecognitionCounts() } }
@@ -199,6 +230,9 @@ struct ContentView: View {
                 Task { await refreshPendingRecognitionCounts() }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyVideoCoverDidChange"))) { _ in
+            if videoCoverModel?.phase != .running { videoCoverRevision += 1 }
+        }
         .alert("目录操作失败", isPresented: Binding(
             get: { diskLibrary.errorMessage != nil },
             set: { if !$0 { diskLibrary.errorMessage = nil } }
@@ -215,18 +249,33 @@ struct ContentView: View {
             DiskPhotoLibraryView(directory: selectedDirectory, revision: diskLibrary.revision,
                                  isScanning: diskLibrary.scanningIDs.contains(selectedDirectory.id),
                                  minimumImageLongEdge: minimumDiskImageLongEdge)
-                .id("\(selectedDirectory.id):\(databaseRevision)")
+                .id("\(selectedDirectory.id):\(databaseRevision):\(hiddenMedia.revision)")
         } else if let selectedAlbum {
             PhotoLibraryView(
                 album: selectedAlbum,
                 assets: libraryAssets(for: selectedAlbum, revision: recognitionRevision),
                 assetsRevision: libraryAssetCacheKey(revision: recognitionRevision)
             )
-                .id("\(selectedAlbum.id):\(databaseRevision)")
+                .id("\(selectedAlbum.id):\(databaseRevision):\(hiddenMedia.revision)")
         } else if !hasPhotoAccess && diskLibrary.directories.isEmpty {
             PhotoPermissionView(openSettings: openPhotoSettings)
         } else {
             ContentUnavailableView("选择一个相册", systemImage: "rectangle.stack", description: Text("从左侧选择相册以查看其中的照片。"))
+        }
+    }
+
+    @ViewBuilder
+    private var videoCoverToolbarIcon: some View {
+        if let model = videoCoverModel {
+            VideoCoverToolbarIcon(model: model, fallbackCount: pendingVideoCoverCount) {
+                Task { await refreshPendingVideoCoverCount() }
+            }
+        } else {
+            Image(systemName: "film.stack")
+                .overlay(alignment: .topTrailing) {
+                    ToolbarPendingCountBadge(count: pendingVideoCoverCount ?? 0)
+                        .offset(x: 8, y: -7)
+                }
         }
     }
 
@@ -296,26 +345,26 @@ struct ContentView: View {
     }
 
     private func libraryAssets(for album: PhotoAlbum, revision: Int) -> [LibraryAsset] {
-        photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: revision))
+        hiddenMedia.visibleAssets(photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: revision)))
     }
 
     private func libraryAssetCacheKey(revision: Int) -> String {
-        "\(photoLibrary.revision):\(revision):\(databaseRevision)"
+        "\(photoLibrary.revision):\(revision):\(databaseRevision):\(hiddenMedia.revision)"
     }
 
     private func selectedAssets() async throws -> (id: String, assets: [LibraryAsset])? {
         if let directory = selectedDirectory {
             let images = try await PhotoMetadataCache.shared.diskLibraryOperation { try $0.images(directoryID: directory.id) }
-            return (directory.id, images.map { LibraryAsset(directory: directory, image: $0) })
+            return (directory.id, hiddenMedia.visibleAssets(images.map { LibraryAsset(directory: directory, image: $0) }))
         }
         if let album = selectedAlbum {
-            return (album.id, photoLibrary.assets(for: album, cacheKey: libraryAssetCacheKey(revision: recognitionRevision)))
+            return (album.id, libraryAssets(for: album, revision: recognitionRevision))
         }
         return nil
     }
 
     private var pendingCountTaskKey: String {
-        "\(selectedAlbumID ?? "")|\(diskLibrary.revision)|\(photoLibrary.revision)|\(databaseRevision)"
+        "\(selectedAlbumID ?? "")|\(diskLibrary.revision)|\(photoLibrary.revision)|\(databaseRevision)|\(hiddenMedia.revision)"
     }
 
     private func refreshPendingRecognitionCounts() async {
@@ -337,7 +386,28 @@ struct ContentView: View {
         }
     }
 
+    private func refreshPendingVideoCoverCount() async {
+        let request = UUID()
+        videoCoverCountRequest = request
+        let requestKey = pendingCountTaskKey
+        do {
+            guard selectedAlbum?.isVideoAlbum == true, let selection = try await selectedAssets() else {
+                pendingVideoCoverCount = 0
+                return
+            }
+            let existing = await VideoCoverStore.existingCoverIDs(for: selection.assets)
+            guard !Task.isCancelled, request == videoCoverCountRequest,
+                  requestKey == pendingCountTaskKey else { return }
+            pendingVideoCoverCount = max(selection.assets.count - existing.count, 0)
+        } catch {
+            guard !Task.isCancelled, request == videoCoverCountRequest,
+                  requestKey == pendingCountTaskKey else { return }
+            pendingVideoCoverCount = nil
+        }
+    }
+
     private func showBatchRecognition() async {
+        let visibilityRevision = hiddenMedia.revision
         let model: BatchRecognitionModel?
         if let activeModel = batchRecognitionModels.activeModel,
            (activeModel.assets.first?.isVideo == true) == (selectedAlbum?.isVideoAlbum == true),
@@ -351,13 +421,15 @@ struct ContentView: View {
             } catch { diskLibrary.errorMessage = error.localizedDescription; return }
         }
 
-        guard let model else { return }
+        guard let model, visibilityRevision == hiddenMedia.revision,
+              model.assets.allSatisfy(hiddenMedia.isVisible) else { return }
         batchRecognitionModel = model
         model.startOrResume()
         isShowingBatchRecognition = true
     }
 
     private func showBatchFaceRecognition() async {
+        let visibilityRevision = hiddenMedia.revision
         let model: BatchFaceRecognitionModel
         if let active = batchFaceRecognitionModels.activeModel,
            (active.assets.first?.isVideo == true) == (selectedAlbum?.isVideoAlbum == true),
@@ -370,20 +442,23 @@ struct ContentView: View {
                 model = batchFaceRecognitionModels.model(for: selection.id, assets: selection.assets)
             } catch { diskLibrary.errorMessage = error.localizedDescription; return }
         }
+        guard visibilityRevision == hiddenMedia.revision, model.assets.allSatisfy(hiddenMedia.isVisible) else { return }
         batchFaceRecognitionModel = model
         model.startOrResume()
         isShowingBatchFaceRecognition = true
     }
 
     private func showVideoCovers() async {
+        let visibilityRevision = hiddenMedia.revision
         do {
             guard let selection = try await selectedAssets(), selectedAlbum?.isVideoAlbum == true else { return }
+            guard visibilityRevision == hiddenMedia.revision, selection.assets.allSatisfy(hiddenMedia.isVisible) else { return }
             let revisions = selection.assets.map(\.revisionID)
             if videoCoverModel?.assets.map(\.revisionID) != revisions {
                 videoCoverModel?.pause()
                 videoCoverModel = BatchVideoCoverModel(assets: selection.assets)
             }
-            videoCoverModel?.start()
+            videoCoverModel?.startOrResume()
             isShowingVideoCovers = true
         } catch {
             diskLibrary.errorMessage = error.localizedDescription
@@ -395,6 +470,30 @@ struct ContentView: View {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct VideoCoverToolbarIcon: View {
+    @ObservedObject var model: BatchVideoCoverModel
+    let fallbackCount: Int?
+    let refreshWhenIdle: () -> Void
+
+    var body: some View {
+        let isRunning = model.phase == .running
+        Image(systemName: "film.stack")
+            .foregroundStyle(isRunning ? Color.blue : Color.primary)
+            .scaleEffect(isRunning ? 1.14 : 1)
+            .opacity(isRunning ? 0.68 : 1)
+            .animation(isRunning ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default,
+                       value: isRunning)
+            .overlay(alignment: .topTrailing) {
+                ToolbarPendingCountBadge(count: isRunning && !model.isPreparing
+                                         ? model.remainingCount : (fallbackCount ?? model.remainingCount))
+                    .offset(x: 8, y: -7)
+            }
+            .onChange(of: isRunning) { _, running in
+                if !running { refreshWhenIdle() }
+            }
     }
 }
 
@@ -516,36 +615,29 @@ private struct PhotoSidebarView: View {
     @ObservedObject var diskLibrary: DiskLibraryStore
     @Binding var selectedAlbumID: String?
     let hasPhotoAccess: Bool
+    let showDiskCounts: Bool
     let openSettings: () -> Void
     let addDirectory: () -> Void
 
     var body: some View {
-        // 审核被拒：侧栏在小窗口下无法滚动。List 在 macOS 27 的侧栏列里没给出可用的
-        // 滚动区域，换成显式 ScrollView，滚动行为由我们自己保证。
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                SidebarSectionHeader("磁盘目录")
+        List {
+            Section("磁盘目录") {
                 Button(action: addDirectory) { Label("添加目录…", systemImage: "folder.badge.plus") }
-                    .buttonStyle(.plain)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-
                 ForEach(diskLibrary.directories) { directory in
                     Button { selectedAlbumID = directory.id } label: {
                         HStack {
                             Image(systemName: "folder")
                             VStack(alignment: .leading) {
                                 Text(directory.title).lineLimit(1)
-                                Text("\(directory.imageCount) 张图片").font(.caption).foregroundStyle(.secondary)
+                                if showDiskCounts {
+                                    Text("\(directory.imageCount) 张图片").font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                             Spacer()
                             if diskLibrary.scanningIDs.contains(directory.id) { ProgressView().controlSize(.mini) }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                         .background(selectedAlbumID == directory.id ? Color.accentColor.opacity(0.2) : .clear)
                     }
@@ -559,15 +651,14 @@ private struct PhotoSidebarView: View {
                             .disabled(diskLibrary.scanningIDs.contains(directory.id))
                     }
                 }
-
-                SidebarSectionHeader("人物")
+            }
+            Section("人物") {
                 Button { selectedAlbumID = PhotoAlbum.faceAlbum.id } label: {
                     PhotoAlbumRow(album: .faceAlbum, isSelected: selectedAlbumID == PhotoAlbum.faceAlbum.id)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-
-                SidebarSectionHeader("视频")
+            }
+            Section("视频") {
                 Button { selectedAlbumID = PhotoAlbum.videoAlbum.id } label: {
                     PhotoAlbumRow(
                         album: .videoAlbum,
@@ -578,9 +669,8 @@ private struct PhotoSidebarView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("videoAlbum")
                 .disabled(!hasPhotoAccess)
-                .padding(.horizontal, 8)
-
-                SidebarSectionHeader("系统相册")
+            }
+            Section("系统相册") {
                 if hasPhotoAccess {
                     ForEach(albums.filter { !$0.isFaceAlbum && !$0.isVideoAlbum }) { album in
                         Button { selectedAlbumID = album.id } label: {
@@ -591,34 +681,13 @@ private struct PhotoSidebarView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 8)
                     }
                 } else {
-                    Text("尚未允许访问照片图库").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
-                    Button("打开照片设置", action: openSettings).padding(.horizontal, 8)
+                    Text("尚未允许访问照片图库").font(.caption).foregroundStyle(.secondary)
+                    Button("打开照片设置", action: openSettings)
                 }
             }
-            .padding(.vertical, 8)
         }
-        .scrollIndicators(.visible)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct SidebarSectionHeader: View {
-    let title: String
-
-    init(_ title: String) { self.title = title }
-
-    var body: some View {
-        Text(title)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.top, 12)
-            .padding(.bottom, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

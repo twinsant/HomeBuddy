@@ -20,6 +20,13 @@ final class BatchRecognitionModelStore: ObservableObject {
     private var phaseSubscriptions: [String: AnyCancellable] = [:]
     @Published private(set) var activeModel: BatchRecognitionModel?
 
+    func reset() {
+        activeModel?.stop()
+        activeModel = nil
+        phaseSubscriptions.removeAll()
+        models.removeAll()
+    }
+
     func model(for albumID: String, assets: [LibraryAsset]) -> BatchRecognitionModel {
         let key = albumID + "|" + (PhotoMetadataCache.shared.databaseURL?.path ?? "") + "|" + assets.map(\.revisionID).joined(separator: "|")
         if let model = models[key] {
@@ -484,6 +491,13 @@ final class BatchFaceRecognitionModelStore: ObservableObject {
     private var phaseSubscriptions: [String: AnyCancellable] = [:]
     @Published private(set) var activeModel: BatchFaceRecognitionModel?
 
+    func reset() {
+        activeModel?.pause()
+        activeModel = nil
+        phaseSubscriptions.removeAll()
+        models.removeAll()
+    }
+
     func model(for albumID: String, assets: [LibraryAsset]) -> BatchFaceRecognitionModel {
         let key = albumID + "|" + (PhotoMetadataCache.shared.databaseURL?.path ?? "") + "|" + assets.map(\.revisionID).joined(separator: "|")
         if let model = models[key] {
@@ -936,10 +950,34 @@ enum VideoCoverStore {
     static func data(for asset: LibraryAsset) throws -> Data {
         let url = try url(for: asset)
         guard let data = try? Data(contentsOf: url),
-              CGImageSourceCreateWithData(data as CFData, nil) != nil else {
+              isValidCover(data) else {
             throw DiskLibraryError.message("请先提取此视频的封面。")
         }
         return data
+    }
+
+    nonisolated private static func isValidCover(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0 else { return false }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
+    }
+
+    static func existingCoverIDs(for assets: [LibraryAsset]) async -> Set<String> {
+        let paths = assets.compactMap { asset -> (String, URL)? in
+            guard let url = try? url(for: asset) else { return nil }
+            return (asset.localIdentifier, url)
+        }
+        return await existingCoverIDs(at: paths)
+    }
+
+    static func existingCoverIDs(at paths: [(String, URL)]) async -> Set<String> {
+        return await Task.detached(priority: .utility) {
+            Set(paths.compactMap { id, url in
+                guard let data = try? Data(contentsOf: url),
+                      isValidCover(data) else { return nil }
+                return id
+            })
+        }.value
     }
 
     nonisolated static func thumbnail(at url: URL, maximumSize: Int) -> CGImage? {
@@ -991,95 +1029,171 @@ enum VideoCoverStore {
 
 @MainActor
 final class BatchVideoCoverModel: ObservableObject {
+    enum Phase { case ready, running, paused, finished }
+
     let assets: [LibraryAsset]
     @Published private(set) var completed = 0
     @Published private(set) var currentName = ""
-    @Published private(set) var isRunning = false
+    @Published private(set) var phase: Phase = .ready
+    @Published private(set) var isPreparing = false
     @Published private(set) var failures: [BatchRecognitionFailure] = []
+    @Published private(set) var averageProcessingTime: TimeInterval?
     private var done = Set<String>()
     private var task: Task<Void, Never>?
     private var generation = UUID()
+    private var totalProcessingTime: TimeInterval = 0
+    private var processingCount = 0
+    private let existingCovers: ([LibraryAsset]) async -> Set<String>
+    private let extractCover: (LibraryAsset) async throws -> Void
 
-    init(assets: [LibraryAsset]) { self.assets = assets }
+    init(assets: [LibraryAsset],
+         existingCovers: @escaping ([LibraryAsset]) async -> Set<String> = VideoCoverStore.existingCoverIDs(for:),
+         extractCover: @escaping (LibraryAsset) async throws -> Void = VideoCoverStore.extract(for:)) {
+        self.assets = assets
+        self.existingCovers = existingCovers
+        self.extractCover = extractCover
+    }
     deinit { task?.cancel() }
 
-    func start() {
-        if !isRunning && completed == assets.count {
-            done = Set(assets.filter { (try? VideoCoverStore.data(for: $0)) != nil }.map(\.localIdentifier))
-            completed = done.count
-        }
-        guard !isRunning, completed < assets.count else { return }
-        isRunning = true
+    var progress: Double { assets.isEmpty ? 1 : Double(completed) / Double(assets.count) }
+    var remainingCount: Int { max(assets.count - completed, 0) }
+    var estimatedRemaining: TimeInterval? {
+        guard let averageProcessingTime, remainingCount > 0 else { return nil }
+        return averageProcessingTime * Double(remainingCount)
+    }
+
+    func startOrResume() {
+        guard phase != .running else { return }
+        phase = .running
+        isPreparing = true
         failures = []
         let run = UUID()
         generation = run
         task = Task { [weak self] in
             guard let self else { return }
+            let existing = await existingCovers(assets)
+            guard !Task.isCancelled, generation == run else { return }
+            done = existing
+            completed = done.count
+            isPreparing = false
             for asset in assets where !Task.isCancelled {
                 if done.contains(asset.localIdentifier) { continue }
                 currentName = asset.localIdentifier
+                let startedAt = Date()
                 do {
-                    try await VideoCoverStore.extract(for: asset)
+                    try await extractCover(asset)
                     try Task.checkCancellation()
                     guard generation == run else { return }
+                    recordProcessingTime(since: startedAt)
                     done.insert(asset.localIdentifier)
                     completed = done.count
                 } catch is CancellationError {
                     break
                 } catch {
                     guard generation == run else { return }
+                    recordProcessingTime(since: startedAt)
                     failures.append(BatchRecognitionFailure(asset: asset, message: error.localizedDescription))
                 }
             }
             guard generation == run else { return }
             currentName = ""
-            isRunning = false
             task = nil
+            phase = Task.isCancelled || completed < assets.count ? .paused : .finished
         }
     }
 
     func pause() {
+        guard phase == .running else { return }
         generation = UUID()
         task?.cancel()
         task = nil
-        isRunning = false
+        isPreparing = false
+        phase = .paused
         currentName = ""
+    }
+
+    private func recordProcessingTime(since start: Date) {
+        totalProcessingTime += Date().timeIntervalSince(start)
+        processingCount += 1
+        averageProcessingTime = totalProcessingTime / Double(processingCount)
     }
 }
 
 struct BatchVideoCoverView: View {
     @ObservedObject var model: BatchVideoCoverModel
+    @Binding var isPresented: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("批量提取视频封面").font(.headline)
-            Text("封面保存在当前数据库目录的 video-covers 文件夹中。")
-                .font(.caption).foregroundStyle(.secondary)
-            ProgressView(value: Double(model.completed), total: Double(max(model.assets.count, 1)))
-            Text("已完成 \(model.completed) / \(model.assets.count)")
+            HStack {
+                Label("批量提取视频封面", systemImage: "film.stack")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                if model.phase == .running {
+                    Button("中断") { model.pause() }
+                }
+                Button("隐藏") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+            Text("已保存的封面会自动跳过。中断后重新打开此窗口即可继续。封面保存在当前数据库目录的 video-covers 文件夹中。")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.isPreparing {
+                ProgressView()
+                Text("正在检查已保存的封面…").foregroundStyle(.secondary)
+            } else {
+                ProgressView(value: model.progress)
+                HStack {
+                    Text("进度：\(model.completed) / \(model.assets.count)")
+                    Spacer()
+                    Text("剩余：\(model.remainingCount) 项")
+                }
+                .font(.headline)
+            }
+            if let remaining = model.estimatedRemaining, !model.isPreparing {
+                Text("预计剩余时间：\(remaining.formattedDuration)")
+                    .foregroundStyle(.secondary)
+            } else if model.phase == .running && !model.isPreparing {
+                Text("正在计算预计剩余时间…").foregroundStyle(.secondary)
+            }
+            if let average = model.averageProcessingTime {
+                Text("平均处理时间：\(average.formattedDuration)").foregroundStyle(.secondary)
+            }
             if !model.currentName.isEmpty {
-                Text(model.currentName).font(.caption).lineLimit(1).foregroundStyle(.secondary)
+                Text("当前处理：\(model.currentName)")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
             }
             if !model.failures.isEmpty {
-                Text("失败 \(model.failures.count) 项，可重试：").foregroundStyle(.red)
                 ScrollView {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("提取失败的视频（恢复时会重试）：\(model.failures.count) 项")
+                            .foregroundStyle(.orange).font(.headline)
                         ForEach(model.failures) { failure in
-                            Text("\(failure.asset.localIdentifier)：\(failure.message)")
-                                .font(.caption).textSelection(.enabled)
+                            BatchRecognitionFailureRow(failure: failure)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }.frame(maxHeight: 140)
+                }.frame(maxHeight: 180)
             }
             HStack {
-                Spacer()
-                if model.isRunning {
-                    Button("暂停") { model.pause() }
-                } else if model.completed < model.assets.count {
-                    Button(model.failures.isEmpty ? "继续" : "重试") { model.start() }
+                if model.phase == .finished {
+                    Label("全部处理完成", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if model.phase != .running {
+                    Button(model.phase == .ready ? "开始提取" : "恢复提取") { model.startOrResume() }
+                        .buttonStyle(.borderedProminent)
                 }
+                Spacer()
             }
-        }.padding().frame(width: 380)
+        }
+        .padding(18)
+        .frame(minWidth: 520, idealWidth: 560)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary) }
+        .onAppear {
+            if model.phase == .ready { model.startOrResume() }
+        }
     }
 }
 

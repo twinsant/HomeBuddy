@@ -34,6 +34,13 @@ final class HomeBuddyUITests: XCTestCase {
     }
 
     @MainActor
+    func testGlobalHiddenMediaSwitchIsAvailable() throws {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["hideMarkedMedia"].waitForExistence(timeout: 15))
+    }
+
+    @MainActor
     func testReturnToAlbumAtEveryZoomLevel() throws {
         let app = XCUIApplication()
         app.launch()
@@ -152,6 +159,30 @@ final class HomeBuddyUITests: XCTestCase {
         info.click()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         app.buttons["backToPhotoLibrary"].click()
+    }
+
+    @MainActor
+    func testVideoCoverFaceOpensPersonAssignment() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let album = app.buttons["videoAlbum"]
+        guard album.waitForExistence(timeout: 15), album.isEnabled else {
+            throw XCTSkip("需要已授权访问系统照片图库")
+        }
+        album.click()
+        let thumbnail = app.buttons["photoThumbnail-0"]
+        guard thumbnail.waitForExistence(timeout: 15) else {
+            throw XCTSkip("需要照片图库中至少有一个视频")
+        }
+        thumbnail.click()
+        let face = app.buttons["faceBoundingBox-0"]
+        guard face.waitForExistence(timeout: 15) else {
+            throw XCTSkip("第一个视频需要已提取封面且已检测到人脸")
+        }
+        face.click()
+        XCTAssertTrue(app.staticTexts["标注人物"].waitForExistence(timeout: 5))
+        app.buttons["取消"].click()
+        XCTAssertTrue(app.staticTexts["标注人物"].waitForNonExistence(timeout: 5))
     }
 
     @MainActor

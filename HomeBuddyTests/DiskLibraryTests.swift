@@ -167,6 +167,10 @@ struct DiskLibraryTests {
         let details = try PhotoExporter.fileDetails(for: asset)
         #expect(details.filename == "photo.png")
         #expect(details.type == .png)
+        let shared = try await MediaShareExporter.prepare(asset)
+        defer { try? manager.removeItem(at: shared.deletingLastPathComponent()) }
+        #expect(shared.lastPathComponent == "photo.png")
+        #expect(try Data(contentsOf: shared) == png)
         let exported = root.appendingPathComponent("exported.png")
         try await PhotoExporter.export(asset, to: exported)
         #expect(try Data(contentsOf: exported) == png)
@@ -189,6 +193,9 @@ struct DiskLibraryTests {
         try Data("changed".utf8).write(to: root.appendingPathComponent("photo.png"))
         await #expect(throws: (any Error).self) {
             try await PhotoExporter.export(asset, to: exported)
+        }
+        await #expect(throws: (any Error).self) {
+            try await MediaShareExporter.prepare(asset)
         }
         #expect(try Data(contentsOf: exported) == png)
         #expect(throws: (any Error).self) { try DiskImageLoader.originalData(directory: directory, image: scanned) }

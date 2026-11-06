@@ -17,6 +17,7 @@ struct PhotoLibraryView: View {
     let assets: [LibraryAsset]
     let assetsRevision: String
     let minimumImageLongEdge: Int
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
     @State private var selectedIndex: Int?
     @State private var selectedVideoIndex: Int?
     @State private var viewerAssets: [LibraryAsset] = []
@@ -24,6 +25,7 @@ struct PhotoLibraryView: View {
     @State private var searchResultIDs: Set<String>?
     @State private var personSummaries: [PersonAlbumSummary] = []
     @State private var selectedPersonID: String?
+    @State private var personSummaryRequestID = UUID()
 
     init(album: PhotoAlbum, assets: [LibraryAsset], assetsRevision: String, minimumImageLongEdge: Int = 0) {
         self.album = album
@@ -71,10 +73,11 @@ struct PhotoLibraryView: View {
             ZStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        if album.isFaceAlbum && !personSummaries.isEmpty {
+                        if (album.isFaceAlbum || album.isVideoAlbum) && !personSummaries.isEmpty {
                             PersonFilterBar(
                                 summaries: personSummaries,
                                 assetsByID: Dictionary(uniqueKeysWithValues: assets.map { ($0.localIdentifier, $0) }),
+                                isVideoAlbum: album.isVideoAlbum,
                                 selectedPersonID: $selectedPersonID
                             )
                         }
@@ -82,14 +85,14 @@ struct PhotoLibraryView: View {
                         if displayedAssets.isEmpty {
                             ContentUnavailableView(
                                 album.isVideoAlbum
-                                    ? (minimumImageLongEdge > 0 || !searchKeywords.isEmpty ? "没有匹配的视频" : "“\(album.title)”中还没有视频")
+                                    ? (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty ? "没有匹配的视频" : "“\(album.title)”中还没有视频")
                                     : (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
                                         ? "没有匹配的照片"
                                         : "“\(album.title)”中还没有照片"),
                                 systemImage: album.isVideoAlbum ? "video" : "photo.on.rectangle.angled",
                                 description: Text(
                                     album.isVideoAlbum
-                                        ? (searchKeywords.isEmpty ? "这个分类暂时没有可显示的视频。" : "尝试调整搜索关键词。")
+                                        ? (selectedPersonID != nil || !searchKeywords.isEmpty ? "尝试调整搜索关键词或关闭筛选条件。" : "这个分类暂时没有可显示的视频。")
                                         : (minimumImageLongEdge > 0 && selectedPersonID == nil && searchKeywords.isEmpty
                                         ? "没有符合最小尺寸的图片（最长边需达到 \(minimumImageLongEdge) 像素）。"
                                         : (minimumImageLongEdge > 0 || selectedPersonID != nil || !searchKeywords.isEmpty
@@ -100,9 +103,9 @@ struct PhotoLibraryView: View {
                             .frame(maxWidth: .infinity, minHeight: 220)
                         } else {
                             if !searchKeywords.isEmpty || minimumImageLongEdge > 0 {
-                                Text(searchKeywords.isEmpty
-                                    ? "筛选后显示 \(displayedAssets.count) 张图片"
-                                    : "找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）")
+                                Text(album.isVideoAlbum
+                                    ? (searchKeywords.isEmpty ? "筛选后显示 \(displayedAssets.count) 个视频" : "找到 \(displayedAssets.count) 个视频（需同时包含全部关键词）")
+                                    : (searchKeywords.isEmpty ? "筛选后显示 \(displayedAssets.count) 张图片" : "找到 \(displayedAssets.count) 张照片（需同时包含全部关键词）"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -121,6 +124,16 @@ struct PhotoLibraryView: View {
                                     } label: {
                                         PhotoThumbnailView(asset: asset)
                                             .contentShape(Rectangle())
+                                            .overlay(alignment: .topTrailing) {
+                                                if hiddenMedia.isHidden(asset) {
+                                                    Image(systemName: "eye.slash.fill")
+                                                        .padding(6)
+                                                        .foregroundStyle(.white)
+                                                        .background(.black.opacity(0.7), in: Circle())
+                                                        .padding(6)
+                                                        .allowsHitTesting(false)
+                                                }
+                                            }
                                     }
                                     .buttonStyle(.plain)
                                     .frame(maxWidth: .infinity)
@@ -191,7 +204,7 @@ struct PhotoLibraryView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("HomeBuddyRecognitionDidChange"))) { _ in
-            if album.isFaceAlbum { loadPersonSummaries() }
+            if album.isFaceAlbum || album.isVideoAlbum { loadPersonSummaries() }
             let keywords = searchKeywords
             guard !keywords.isEmpty else { return }
             PhotoMetadataCache.shared.assetIDs(matchingOllamaKeywords: keywords) { result in
@@ -213,13 +226,16 @@ struct PhotoLibraryView: View {
             }
         }
         .task(id: personSummaryTaskID) {
-            if album.isFaceAlbum { loadPersonSummaries() }
-            else { personSummaries = []; selectedPersonID = nil }
+            if album.isFaceAlbum || album.isVideoAlbum { loadPersonSummaries() }
+            else { personSummaryRequestID = UUID(); personSummaries = []; selectedPersonID = nil }
         }
     }
 
     private func loadPersonSummaries() {
-        PhotoMetadataCache.shared.personAlbumSummaries { summaries in
+        let requestID = UUID()
+        personSummaryRequestID = requestID
+        PhotoMetadataCache.shared.personAlbumSummaries(assetIDs: Set(assets.map(\.localIdentifier))) { summaries in
+            guard personSummaryRequestID == requestID else { return }
             personSummaries = summaries
             if let selectedPersonID, !summaries.contains(where: { $0.person.id == selectedPersonID }) {
                 self.selectedPersonID = nil
@@ -231,6 +247,7 @@ struct PhotoLibraryView: View {
 private struct PersonFilterBar: View {
     let summaries: [PersonAlbumSummary]
     let assetsByID: [String: LibraryAsset]
+    let isVideoAlbum: Bool
     @Binding var selectedPersonID: String?
 
     var body: some View {
@@ -261,7 +278,7 @@ private struct PersonFilterBar: View {
                                     in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("显示全部人物照片")
+                    .accessibilityLabel(isVideoAlbum ? "显示全部视频" : "显示全部人物照片")
 
                     ForEach(summaries) { summary in
                         Button {
@@ -283,7 +300,9 @@ private struct PersonFilterBar: View {
                                         .foregroundStyle(.purple)
                                 }
                                 .font(.caption2.monospacedDigit())
-                                .help("已识别 \(summary.recognizedPhotoCount) 张 · 潜在识别 \(summary.potentialPhotoCount) 张")
+                                .help(isVideoAlbum
+                                    ? "已识别 \(summary.recognizedPhotoCount) 个视频 · 潜在识别 \(summary.potentialPhotoCount) 个视频"
+                                    : "已识别 \(summary.recognizedPhotoCount) 张 · 潜在识别 \(summary.potentialPhotoCount) 张")
                             }
                             .frame(width: 108)
                             .padding(8)
@@ -292,7 +311,9 @@ private struct PersonFilterBar: View {
                             .contentShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(summary.person.displayName)，已识别 \(summary.recognizedPhotoCount) 张，潜在识别 \(summary.potentialPhotoCount) 张")
+                        .accessibilityLabel(isVideoAlbum
+                            ? "\(summary.person.displayName)，已识别 \(summary.recognizedPhotoCount) 个视频，潜在识别 \(summary.potentialPhotoCount) 个视频"
+                            : "\(summary.person.displayName)，已识别 \(summary.recognizedPhotoCount) 张，潜在识别 \(summary.potentialPhotoCount) 张")
                         .accessibilityAddTraits(selectedPersonID == summary.person.id ? .isSelected : [])
                     }
                 }
@@ -329,6 +350,16 @@ private struct PersonAlbumAvatar: View {
         .task(id: asset?.revisionID) {
             image = nil
             guard let asset else { return }
+            if asset.isVideo, let url = try? VideoCoverStore.url(for: asset) {
+                let cover = await Task.detached(priority: .userInitiated) {
+                    VideoCoverStore.thumbnail(at: url, maximumSize: 600)
+                }.value
+                guard !Task.isCancelled else { return }
+                if let cover {
+                    setImage(from: cover)
+                    return
+                }
+            }
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.resizeMode = .fast
@@ -341,32 +372,40 @@ private struct PersonAlbumAvatar: View {
             ) { source, _ in
                 guard let source else { return }
                 guard let cgImage = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-                let sourceRect = faceBox.map { box in
-                    CGRect(
-                        x: box.minX * CGFloat(cgImage.width),
-                        y: (1 - box.maxY) * CGFloat(cgImage.height),
-                        width: box.width * CGFloat(cgImage.width),
-                        height: box.height * CGFloat(cgImage.height)
-                    ).insetBy(dx: -box.width * CGFloat(cgImage.width) * 0.18,
-                              dy: -box.height * CGFloat(cgImage.height) * 0.18)
-                }
-                let cropped = sourceRect.flatMap { rect in
-                    cgImage.cropping(to: rect.integral.intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)))
-                } ?? cgImage
-                image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+                setImage(from: cgImage)
             }
         }
+    }
+
+    private func setImage(from cgImage: CGImage) {
+        let sourceRect = faceBox.map { box in
+            CGRect(
+                x: box.minX * CGFloat(cgImage.width),
+                y: (1 - box.maxY) * CGFloat(cgImage.height),
+                width: box.width * CGFloat(cgImage.width),
+                height: box.height * CGFloat(cgImage.height)
+            ).insetBy(dx: -box.width * CGFloat(cgImage.width) * 0.18,
+                      dy: -box.height * CGFloat(cgImage.height) * 0.18)
+        }
+        let cropped = sourceRect.flatMap { rect in
+            cgImage.cropping(to: rect.integral.intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)))
+        } ?? cgImage
+        image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
     }
 }
 
 private struct PhotoExportMenu: ViewModifier {
     let asset: LibraryAsset
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
     @State private var isExporting = false
     @State private var exportError: String?
 
     func body(content: Content) -> some View {
         content
             .contextMenu {
+                Button(hiddenMedia.isHidden(asset) ? "取消隐藏" : "隐藏", systemImage: hiddenMedia.isHidden(asset) ? "eye" : "eye.slash") {
+                    hiddenMedia.toggleHidden(asset)
+                }
                 if !asset.isVideo {
                     Button("导出照片…", systemImage: "square.and.arrow.up") {
                         let snapshot = asset
@@ -395,7 +434,7 @@ private struct PhotoExportMenu: ViewModifier {
 
     @MainActor
     private func export(_ snapshot: LibraryAsset) async {
-        guard !isExporting else { return }
+        guard !isExporting, hiddenMedia.isVisible(snapshot) else { return }
         isExporting = true
         defer { isExporting = false }
         do {
@@ -408,6 +447,7 @@ private struct PhotoExportMenu: ViewModifier {
             panel.canCreateDirectories = true
             if let type = details.type { panel.allowedContentTypes = [type] }
             guard panel.runModal() == .OK, let destination = panel.url else { return }
+            guard hiddenMedia.isVisible(snapshot) else { return }
             try await PhotoExporter.export(snapshot, to: destination)
         } catch {
             exportError = error.localizedDescription
@@ -478,6 +518,147 @@ nonisolated enum PhotoExporter {
                 try Data(contentsOf: staging).write(to: destination, options: .atomic)
             }.value
         }
+    }
+}
+
+/// Keeps shared files available after the picker closes, including while another app imports them.
+nonisolated enum MediaShareExporter {
+    static var directory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("HomeBuddySharedMedia", isDirectory: true)
+    }
+
+    static func prepare(_ asset: LibraryAsset) async throws -> URL {
+        let manager = FileManager.default
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        for folder in (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            if let date = try? folder.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+               date < cutoff {
+                try? manager.removeItem(at: folder)
+            }
+        }
+
+        let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        do {
+            if asset.isVideo {
+                guard case .photos(let video) = asset.source else {
+                    throw DiskLibraryError.message("找不到可分享的视频资源。")
+                }
+                let resources = PHAssetResource.assetResources(for: video)
+                guard let resource = resources.first(where: { $0.type == .fullSizeVideo })
+                    ?? resources.first(where: { $0.type == .video }) else {
+                    throw DiskLibraryError.message("找不到可分享的视频资源。")
+                }
+                let filename = URL(fileURLWithPath: resource.originalFilename).lastPathComponent
+                let destination = folder.appendingPathComponent(filename.isEmpty ? "Video.mov" : filename)
+                let options = PHAssetResourceRequestOptions()
+                options.isNetworkAccessAllowed = true
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    PHAssetResourceManager.default().writeData(for: resource, toFile: destination, options: options) { error in
+                        if let error { continuation.resume(throwing: error) }
+                        else { continuation.resume() }
+                    }
+                }
+                return destination
+            }
+            let filename = try PhotoExporter.fileDetails(for: asset).filename
+            let destination = folder.appendingPathComponent(filename.isEmpty ? "Photo" : filename)
+            try await PhotoExporter.export(asset, to: destination)
+            return destination
+        } catch {
+            try? manager.removeItem(at: folder)
+            throw error
+        }
+    }
+}
+
+private struct SharePickerAnchor: NSViewRepresentable {
+    @Binding var view: NSView?
+
+    func makeNSView(context: Context) -> NSView {
+        let anchor = NSView()
+        DispatchQueue.main.async { view = anchor }
+        return anchor
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private struct HiddenMediaButton: View {
+    let asset: LibraryAsset
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
+
+    var body: some View {
+        Button {
+            hiddenMedia.toggleHidden(asset)
+        } label: {
+            Label(hiddenMedia.isHidden(asset) ? "取消隐藏" : "隐藏",
+                  systemImage: hiddenMedia.isHidden(asset) ? "eye" : "eye.slash")
+        }
+        .accessibilityIdentifier("toggleHiddenMedia")
+        .help(hiddenMedia.isHidden(asset) ? "取消隐藏此项目" : "隐藏此项目")
+    }
+}
+
+private struct MediaShareButton: View {
+    let asset: LibraryAsset
+    @ObservedObject private var hiddenMedia = HiddenMediaStore.shared
+    @State private var anchor: NSView?
+    @State private var picker: NSSharingServicePicker?
+    @State private var isPreparing = false
+    @State private var generation = UUID()
+    @State private var shareError: String?
+
+    var body: some View {
+        Button {
+            let snapshot = asset
+            guard hiddenMedia.isVisible(snapshot) else { return }
+            let request = UUID()
+            generation = request
+            isPreparing = true
+            Task { @MainActor in
+                do {
+                    let url = try await MediaShareExporter.prepare(snapshot)
+                    guard generation == request, hiddenMedia.isVisible(snapshot), let anchor, anchor.window != nil else {
+                        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+                        if generation == request { isPreparing = false }
+                        return
+                    }
+                    isPreparing = false
+                    let picker = NSSharingServicePicker(items: [url])
+                    self.picker = picker
+                    picker.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+                } catch {
+                    guard generation == request else { return }
+                    isPreparing = false
+                    shareError = error.localizedDescription
+                }
+            }
+        } label: {
+            Label(asset.isVideo ? "分享视频" : "分享图片", systemImage: "square.and.arrow.up")
+        }
+        .background(SharePickerAnchor(view: $anchor).allowsHitTesting(false))
+        .disabled(isPreparing)
+        .accessibilityIdentifier(asset.isVideo ? "shareVideo" : "sharePhoto")
+        .help(asset.isLivePhoto ? "分享 Live Photo 的静态照片" : (asset.isVideo ? "分享当前视频" : "分享当前图片"))
+        .alert("分享失败", isPresented: Binding(
+            get: { shareError != nil },
+            set: { if !$0 { shareError = nil } }
+        )) {
+            Button("好", role: .cancel) { shareError = nil }
+        } message: {
+            Text(shareError ?? "未知错误")
+        }
+        .onChange(of: asset.revisionID) { _, _ in invalidate() }
+        .onChange(of: hiddenMedia.revision) { _, _ in invalidate() }
+        .onDisappear { invalidate() }
+    }
+
+    private func invalidate() {
+        generation = UUID()
+        isPreparing = false
+        shareError = nil
     }
 }
 
@@ -597,6 +778,15 @@ private struct PhotoThumbnailView: View {
 }
 
 private struct PhotoVideoPlayerView: View {
+    private struct FaceSelection: Identifiable {
+        let id = UUID()
+        let index: Int
+        let box: CGRect
+        let asset: LibraryAsset
+        let session: UUID
+        let navigationGeneration: UUID
+    }
+
     let assets: [LibraryAsset]
     let initialIndex: Int
     let albumTitle: String
@@ -610,9 +800,13 @@ private struct PhotoVideoPlayerView: View {
     @State private var coverFaces: FaceDetectionResult?
     @State private var coverImage: NSImage?
     @State private var people: [Person] = []
+    @State private var mostLabeledPeople: [PersonFaceCount] = []
+    @State private var selectedFace: FaceSelection?
+    @State private var faceAssignmentError: String?
     @State private var isShowingInfo = true
     @State private var resultGeneration = UUID()
     @State private var coverGeneration = UUID()
+    @State private var navigationGeneration = UUID()
     @State private var metadata: VideoMetadata?
 
     init(assets: [LibraryAsset], initialIndex: Int, albumTitle: String, onBack: @escaping (String) -> Void) {
@@ -662,7 +856,8 @@ private struct PhotoVideoPlayerView: View {
                         coverImage: coverImage,
                         ollamaText: coverDescription,
                         faceResult: coverFaces,
-                        people: people
+                        people: people,
+                        onFaceTap: selectFace
                     )
                     .frame(width: 300)
                 }
@@ -704,6 +899,25 @@ private struct PhotoVideoPlayerView: View {
         .onDisappear {
             resetVideo()
         }
+        .sheet(item: $selectedFace) { selection in
+            PersonAssignmentSheet(
+                people: people,
+                mostLabeledPeople: $mostLabeledPeople,
+                faces: .constant(coverFaces?.faces ?? []),
+                faceIndex: selection.index,
+                isRecognizingFaces: .constant(false),
+                onAssign: { assignPerson($0, selection: selection) },
+                onCreate: { assignNewPerson(named: $0, selection: selection) }
+            )
+        }
+        .alert("人物标注失败", isPresented: Binding(
+            get: { faceAssignmentError != nil },
+            set: { if !$0 { faceAssignmentError = nil } }
+        )) {
+            Button("确定", role: .cancel) { faceAssignmentError = nil }
+        } message: {
+            Text(faceAssignmentError ?? "")
+        }
         .onMoveCommand { direction in
             switch direction {
             case .left: navigate(to: currentIndex - 1)
@@ -713,6 +927,16 @@ private struct PhotoVideoPlayerView: View {
         }
         .onExitCommand { onBack(asset.localIdentifier) }
         .toolbar {
+            ToolbarItem {
+                HiddenMediaButton(asset: asset)
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
+                MediaShareButton(asset: asset)
+            }
+            .sharedBackgroundVisibility(.hidden)
+
             ToolbarItem {
                 Button {
                     isShowingInfo.toggle()
@@ -736,6 +960,7 @@ private struct PhotoVideoPlayerView: View {
         loadGeneration = UUID()
         resultGeneration = UUID()
         coverGeneration = UUID()
+        navigationGeneration = UUID()
         if let requestID { PHImageManager.default().cancelImageRequest(requestID) }
         requestID = nil
         player?.pause()
@@ -746,6 +971,9 @@ private struct PhotoVideoPlayerView: View {
         coverFaces = nil
         coverImage = nil
         people = []
+        mostLabeledPeople = []
+        selectedFace = nil
+        faceAssignmentError = nil
     }
 
     private func loadVideoMetadata(for currentAsset: LibraryAsset) async {
@@ -780,6 +1008,70 @@ private struct PhotoVideoPlayerView: View {
         PhotoMetadataCache.shared.people {
             guard resultGeneration == generation else { return }
             people = $0
+        }
+    }
+
+    private func selectFace(_ index: Int) {
+        guard let faces = coverFaces?.faces, faces.indices.contains(index) else { return }
+        let currentAsset = asset
+        let session = PhotoMetadataCache.shared.databaseSession
+        let navigation = navigationGeneration
+        selectedFace = FaceSelection(index: index, box: faces[index].box, asset: currentAsset,
+                                     session: session, navigationGeneration: navigation)
+        PhotoMetadataCache.shared.mostLabeledPeople { rankedPeople in
+            guard asset.revisionID == currentAsset.revisionID,
+                  PhotoMetadataCache.shared.databaseSession == session,
+                  navigationGeneration == navigation else { return }
+            mostLabeledPeople = rankedPeople
+        }
+    }
+
+    private func selectionIsCurrent(_ selection: FaceSelection) -> Bool {
+        guard asset.revisionID == selection.asset.revisionID,
+              PhotoMetadataCache.shared.databaseSession == selection.session,
+              navigationGeneration == selection.navigationGeneration,
+              let faces = coverFaces?.faces, faces.indices.contains(selection.index) else { return false }
+        return faces[selection.index].box == selection.box
+    }
+
+    private func assignPerson(_ personID: String?, selection: FaceSelection) {
+        guard selectionIsCurrent(selection) else {
+            faceAssignmentError = AppLocalization.localizedString("人脸结果已变化，请重新选择人脸。", comment: "")
+            loadCoverResults()
+            return
+        }
+        selectedFace = nil
+        PhotoMetadataCache.shared.saveFacePersonID(
+            personID, faceIndex: selection.index, for: selection.asset,
+            expectedFaceBox: selection.box, expectedSession: selection.session
+        ) { succeeded in
+            guard asset.revisionID == selection.asset.revisionID,
+                  PhotoMetadataCache.shared.databaseSession == selection.session,
+                  navigationGeneration == selection.navigationGeneration else { return }
+            if !succeeded {
+                faceAssignmentError = AppLocalization.localizedString("人脸标注未能保存，识别结果可能已变化，请重试。", comment: "")
+                loadCoverResults()
+            }
+        }
+    }
+
+    private func assignNewPerson(named name: String, selection: FaceSelection) {
+        guard selectionIsCurrent(selection) else {
+            faceAssignmentError = AppLocalization.localizedString("人脸结果已变化，请重新选择人脸。", comment: "")
+            loadCoverResults()
+            return
+        }
+        selectedFace = nil
+        PhotoMetadataCache.shared.savePerson(named: name, expectedSession: selection.session) { person in
+            guard asset.revisionID == selection.asset.revisionID,
+                  PhotoMetadataCache.shared.databaseSession == selection.session,
+                  navigationGeneration == selection.navigationGeneration else { return }
+            guard let person else {
+                faceAssignmentError = AppLocalization.localizedString("人物未能保存，请重试。", comment: "")
+                return
+            }
+            if !people.contains(where: { $0.id == person.id }) { people.append(person) }
+            assignPerson(person.id, selection: selection)
         }
     }
 
@@ -893,6 +1185,7 @@ private struct VideoRecognitionInfoSidebar: View {
     let ollamaText: String?
     let faceResult: FaceDetectionResult?
     let people: [Person]
+    let onFaceTap: (Int) -> Void
 
     var body: some View {
         ScrollView {
@@ -925,6 +1218,17 @@ private struct VideoRecognitionInfoSidebar: View {
                             .resizable().aspectRatio(contentMode: .fit)
                             .frame(maxWidth: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                FaceBoundingBoxOverlay(
+                                    imageSize: coverImage.size,
+                                    faces: faceResult?.faces ?? [],
+                                    personNames: Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0.displayName) }),
+                                    imagePadding: 0,
+                                    minimumBoxSize: 0,
+                                    onFaceTap: onFaceTap
+                                )
+                            }
+                            .accessibilityIdentifier("videoCoverImage")
                     } else {
                         Text("尚未提取封面，请返回视频分类后选择“提取封面”。")
                             .font(.caption).foregroundStyle(.secondary)
@@ -948,15 +1252,22 @@ private struct VideoRecognitionInfoSidebar: View {
                     if let faceResult {
                         Text(faceResult.faceCount == 0 ? "未检测到人脸" : "检测到 \(faceResult.faceCount) 张人脸")
                         ForEach(Array(faceResult.faces.enumerated()), id: \.offset) { index, face in
-                            if let personID = face.personID {
-                                let name = people.first(where: { $0.id == personID })?.displayName
-                                    ?? AppLocalization.localizedString("未知人物", comment: "")
-                                Text("人脸 \(index + 1)：\(name)")
-                            } else if let candidate = face.candidate {
-                                Text("人脸 \(index + 1)：可能是 \(candidate.displayName)（待确认）")
-                            } else {
-                                Text("人脸 \(index + 1)：未标注")
+                            Button {
+                                onFaceTap(index)
+                            } label: {
+                                if let personID = face.personID {
+                                    let name = people.first(where: { $0.id == personID })?.displayName
+                                        ?? AppLocalization.localizedString("未知人物", comment: "")
+                                    Text("人脸 \(index + 1)：\(name)")
+                                } else if let candidate = face.candidate {
+                                    Text("人脸 \(index + 1)：可能是 \(candidate.displayName)（待确认）")
+                                } else {
+                                    Text("人脸 \(index + 1)：未标注")
+                                }
                             }
+                            .buttonStyle(.link)
+                            .disabled(coverImage == nil)
+                            .accessibilityIdentifier("videoCoverFaceRow-\(index)")
                         }
                         .font(.caption)
                     } else {
@@ -1316,6 +1627,16 @@ private struct PhotoViewerView: View {
             )
         }
         .toolbar {
+            ToolbarItem {
+                HiddenMediaButton(asset: currentAsset)
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem {
+                MediaShareButton(asset: currentAsset)
+            }
+            .sharedBackgroundVisibility(.hidden)
+
             ToolbarItem {
                 Button {
                     isShowingInfo.toggle()
@@ -2299,33 +2620,39 @@ enum PhotoViewerGeometry {
     }
 }
 
+enum FaceOverlayGeometry {
+    static func imageRect(imageSize: CGSize, viewportSize: CGSize, padding: CGFloat) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return .zero }
+        let inset = max(padding, 0) * 2
+        let scale = min(max(viewportSize.width - inset, 0) / imageSize.width,
+                        max(viewportSize.height - inset, 0) / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: (viewportSize.width - size.width) / 2,
+                      y: (viewportSize.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
+
+    static func faceRect(_ box: CGRect, in imageRect: CGRect) -> CGRect {
+        CGRect(x: imageRect.minX + box.minX * imageRect.width,
+               y: imageRect.minY + (1 - box.maxY) * imageRect.height,
+               width: box.width * imageRect.width, height: box.height * imageRect.height)
+    }
+}
+
 private struct FaceBoundingBoxOverlay: View {
     let imageSize: CGSize
     let faces: [DetectedFace]
     let personNames: [String: String]
+    var imagePadding: CGFloat = 24
+    var minimumBoxSize: CGFloat = 28
     let onFaceTap: (Int) -> Void
 
     var body: some View {
         GeometryReader { proxy in
-            let contentSize = CGSize(
-                width: max(proxy.size.width - 48, 0),
-                height: max(proxy.size.height - 48, 0)
-            )
-            let scale = min(
-                contentSize.width / max(imageSize.width, 1),
-                contentSize.height / max(imageSize.height, 1)
-            )
-            let displayedSize = CGSize(
-                width: imageSize.width * scale,
-                height: imageSize.height * scale
-            )
-            let origin = CGPoint(
-                x: (proxy.size.width - displayedSize.width) / 2,
-                y: (proxy.size.height - displayedSize.height) / 2
-            )
+            let imageRect = FaceOverlayGeometry.imageRect(imageSize: imageSize, viewportSize: proxy.size, padding: imagePadding)
 
             ForEach(Array(faces.enumerated()), id: \.offset) { index, face in
-                let box = face.box
+                let box = FaceOverlayGeometry.faceRect(face.box, in: imageRect)
                 Button {
                     onFaceTap(index)
                 } label: {
@@ -2341,16 +2668,20 @@ private struct FaceBoundingBoxOverlay: View {
                                 .offset(y: -24)
                         }
                     }
+                    .frame(width: max(box.width, minimumBoxSize), height: max(box.height, minimumBoxSize))
+                    .frame(width: max(box.width, 28), height: max(box.height, 28))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("faceBoundingBox-\(index)")
+                .accessibilityLabel("标注人脸 \(index + 1)")
                 .frame(
-                    width: max(box.width * displayedSize.width, 28),
-                    height: max(box.height * displayedSize.height, 28)
+                    width: max(box.width, 28),
+                    height: max(box.height, 28)
                 )
                 .position(
-                    x: origin.x + box.midX * displayedSize.width,
-                    y: origin.y + (1 - box.midY) * displayedSize.height
+                    x: box.midX,
+                    y: box.midY
                 )
             }
         }
