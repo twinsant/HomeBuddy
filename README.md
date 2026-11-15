@@ -50,6 +50,7 @@ HomeBuddy 是一款 macOS 照片整理工具：浏览系统照片图库、缓存
 ## 数据和隐私
 
 - 照片原图默认从系统照片图库读取，不由 HomeBuddy 自动复制到仓库目录。
+- 旧版本生成的音频和字幕文件不会被删除；它们可能保存在当时数据库目录下的 `audio` 文件夹中。
 - 元数据、人物名称、人脸框和 Ollama 识别文字会写入 SQLite 缓存。默认缓存目录为 `~/.homebuddy/photo-metadata.sqlite`，无法使用时会尝试 macOS Application Support 目录；也可以在设置中选择其他目录。
 - Ollama 图片识别会把照片数据发送到设置中的 Ollama 地址。默认地址是本机回环地址，但用户可以改为远端地址。
 - Chroma 会接收人脸 embedding；已确认的人脸记录还会包含照片标识、人物 ID、人物名称和模型 ID。

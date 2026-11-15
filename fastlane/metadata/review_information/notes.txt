@@ -1,8 +1,66 @@
-HomeBuddy organizes the user's own photo library on macOS.
+HomeBuddy organizes the user's own photo library on macOS. There is no account,
+no login, no in-app purchase and no server.
 
-1. No account, no login, no in-app purchase. Price is one-time.
-2. Core features work with no external setup: browse the system Photo Library, albums and any folder on disk; read metadata.
-3. Face detection needs a local model file the user supplies. The app does not bundle or download model weights. In Settings, pick an antelopev2.gguf compatible .gguf file and a folder for the metadata database. The bundled repository and the app contain no model weights.
-4. Ollama (optional, for photo descriptions) and Chroma (optional, for face vector search) are services the user runs locally. The app defaults to http://127.0.0.1:11434 and http://localhost:8000 and only contacts them after the user saves the address in Settings.
-5. Reviewer steps without any model or service: launch, grant Photo Library access, browse albums, open a photo to see metadata. All of this is offline.
-6. Screenshots use synthetic images only. No personal photos, no local file paths.
+== How to test the app without any setup (about two minutes) ==
+
+1. Launch. If the photo access prompt appears, allow it. To reset the prompt:
+   tccutil reset Photos com.twinsant.HomeBuddy
+2. The left sidebar lists: disk directories, People, Videos, System albums.
+   Click any system album to load thumbnails. The sidebar scrolls; if a window
+   is short, scroll it to reach Videos and System albums.
+3. Click a photo. The detail pane shows metadata: date, camera, exposure,
+   resolution, file size, and the album it came from.
+4. Open Settings (cmd-,) to see the optional services. Nothing there has to be
+   configured to use the features above.
+
+Everything in steps 1 to 4 is offline and needs no model, no Ollama, no Chroma.
+
+== Optional features you will not be able to try, and why ==
+
+Face detection requires a local model file that the user supplies; the app
+bundles no model weights and downloads none. Ollama (photo descriptions) and
+Chroma (face vector search) are services the user runs locally and points the
+app at. These three are optional by design: without them the app is a plain
+photo organizer.
+
+If you want to try face detection during this review, say so in the Resolution
+Center and we will ship a review-only build with a sample model and a sample
+photo folder inside the bundle, under a separate bundle identifier.
+
+== Photo library access (guideline 2.4.5) ==
+
+The app reaches the photo library only through PhotoKit, the documented public
+framework:
+- PHPhotoLibrary.authorizationStatus(for: .read) and requestAuthorization(for: .read)
+  Read-only. The app never modifies the library; there is no performChanges or
+  PHAssetChangeRequest call anywhere in the source.
+- PHAsset.fetchAssets, PHAssetCollection.fetchAssetCollections, PHFetchOptions
+- PHImageManager / PHCachingImageManager for thumbnails and previews
+- PHAssetResourceManager, only to write a copy of an asset the user explicitly
+  exports into a folder the user chose
+
+No file inside the Photos library package is opened by path. When the user adds
+a folder to the disk library, the scanner uses .skipsPackageDescendants, so a
+.photoslibrary package is never traversed.
+
+Note on the requested access level: PhotoKit only offers two levels, addOnly and
+readWrite. There is no read-only level, so readWrite is the documented way to
+read a photo library. The app never calls a write API; the string "readWrite"
+in the code does not mean the app modifies anything.
+
+== Face data (guideline 2.1) ==
+
+The "Face data" section of the privacy policy holds the full answer:
+https://www.twinsant.com/homebuddy/privacy
+
+Short version: face detection runs on the Mac; it produces bounding boxes, a
+512-dimension embedding, and the person name the user assigns; embeddings go to
+the Chroma collection the user configured (default http://localhost:8000, on
+the same Mac), names and boxes go to a local SQLite file; nothing is sent to us
+and nothing is shared with third parties. Data is deleted by removing those two
+local stores. No face crops are kept, no photos are uploaded, and face data is
+never used to verify anyone's real identity or to train a model.
+
+== Screenshots ==
+
+They use synthetic scenery only. No personal photos and no local file paths.
