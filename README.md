@@ -1,6 +1,7 @@
 # HomeBuddy
 
-HomeBuddy 是一款 macOS 照片整理工具：浏览系统照片图库、缓存照片元数据、进行本地人脸检测与人物标注，并可选择使用 Ollama 对照片进行视觉描述。
+[HomeBuddy](https://apps.apple.com/cn/app/homebuddy-photo-organizer/id6824771683?l=en-GB&mt=12
+HomeBuddy: Photo Organizer) 是一款 macOS 照片整理工具：浏览系统照片图库、缓存照片元数据、进行本地人脸检测与人物标注，并可选择使用 Ollama 对照片进行视觉描述。
 
 > 当前项目处于开发阶段。发布公开仓库或分发应用前，请阅读 [安全与隐私审计](doc/security-privacy-audit-2026-09-24.md)。
 
